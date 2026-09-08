@@ -1,0 +1,4 @@
+# https://developers.home-assistant.io/docs/apps/repository#repository-configuration
+name: ha-config2git repository
+url: 'https://github.com/wollekuel/ha-config2git'
+maintainer: wollekuel

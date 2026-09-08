@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS
+.DS_Store
+
+# Editors / IDEs
+.vscode/
+.idea/
+
+# Secrets - never commit private keys
+id_ed25519
+id_ed25519.pub
+id_rsa
+id_rsa.pub
+*.pem
+
+# Logs
+*.log
