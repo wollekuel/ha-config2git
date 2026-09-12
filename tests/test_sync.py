@@ -1,0 +1,324 @@
+"""Unit tests for the Sync component."""
+
+from __future__ import annotations
+
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+APP_DIR = Path(__file__).resolve().parents[1] / "ha_config2git" / "rootfs" / "app"
+sys.path.insert(0, str(APP_DIR))
+
+from pathfilter import PathFilter  # noqa: E402
+from sync import Sync, SyncError  # noqa: E402
+
+
+def _write(path: Path, content: str = "content") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def _read(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def _rel_files(root: Path) -> set[str]:
+    result: set[str] = set()
+    for dirpath, _dirnames, filenames in os.walk(root):
+        for name in filenames:
+            result.add(Path(dirpath, name).relative_to(root).as_posix())
+    return result
+
+
+def _snapshot(root: Path) -> dict[str, tuple[bytes, int]]:
+    return {
+        p.relative_to(root).as_posix(): (p.read_bytes(), p.stat().st_mtime_ns)
+        for p in root.rglob("*")
+        if p.is_file() and not p.is_symlink()
+    }
+
+
+class SyncTestCase(unittest.TestCase):
+    def _sync(self, source: Path, repo: Path, include, exclude=()):
+        return Sync(source, repo, PathFilter(include_patterns=include, exclude_patterns=exclude))
+
+
+class CopyTests(SyncTestCase):
+    def test_single_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "configuration.yaml", "hello")
+
+            result = self._sync(source, repo, ["*.yaml"]).sync()
+
+            self.assertEqual(result.copied, ["configuration.yaml"])
+            self.assertEqual(_read(repo / "configuration.yaml"), "hello")
+
+    def test_multiple_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "a.yaml")
+            _write(source / "b.yaml")
+            _write(source / "c.txt")
+
+            result = self._sync(source, repo, ["*.yaml"]).sync()
+
+            self.assertEqual(result.copied, ["a.yaml", "b.yaml"])
+            self.assertEqual(_rel_files(repo), {"a.yaml", "b.yaml"})
+
+    def test_nested_directories(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "custom_components/foo/__init__.py")
+            _write(source / "custom_components/foo/bar.py")
+
+            result = self._sync(source, repo, ["custom_components/**"]).sync()
+
+            self.assertEqual(
+                set(result.copied),
+                {"custom_components/foo/__init__.py", "custom_components/foo/bar.py"},
+            )
+            self.assertEqual(
+                _read(repo / "custom_components/foo/__init__.py"), "content"
+            )
+
+
+class PatternTests(SyncTestCase):
+    def test_include_patterns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "config.yaml")
+            _write(source / "config.json")
+            _write(source / "config.txt")
+
+            result = self._sync(source, repo, ["*.yaml", "*.json"]).sync()
+
+            self.assertEqual(result.copied, ["config.json", "config.yaml"])
+
+    def test_exclude_patterns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "configuration.yaml")
+            _write(source / "secrets.yaml")
+
+            result = self._sync(
+                source, repo, ["*.yaml"], exclude=["secrets.yaml"]
+            ).sync()
+
+            self.assertEqual(result.copied, ["configuration.yaml"])
+            self.assertNotIn("secrets.yaml", _rel_files(repo))
+
+    def test_exclude_wins(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "custom_components/foo/__init__.py")
+            _write(source / "custom_components/foo/secret.py")
+
+            result = self._sync(
+                source, repo, ["custom_components/**"], exclude=["**/secret.py"]
+            ).sync()
+
+            self.assertEqual(result.copied, ["custom_components/foo/__init__.py"])
+
+
+class IncrementalTests(SyncTestCase):
+    def test_new_file_on_second_sync(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "a.yaml")
+            sync = self._sync(source, repo, ["*.yaml"])
+
+            sync.sync()
+            _write(source / "b.yaml")
+            result = sync.sync()
+
+            self.assertEqual(result.copied, ["b.yaml"])
+
+    def test_changed_file_on_second_sync(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "a.yaml", "v1")
+            sync = self._sync(source, repo, ["*.yaml"])
+
+            sync.sync()
+            _write(source / "a.yaml", "v2")
+            result = sync.sync()
+
+            self.assertEqual(result.copied, ["a.yaml"])
+            self.assertEqual(_read(repo / "a.yaml"), "v2")
+
+    def test_deleted_source_file_removed_in_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "a.yaml")
+            _write(source / "b.yaml")
+            sync = self._sync(source, repo, ["*.yaml"])
+
+            sync.sync()
+            (source / "a.yaml").unlink()
+            result = sync.sync()
+
+            self.assertEqual(result.deleted, ["a.yaml"])
+            self.assertNotIn("a.yaml", _rel_files(repo))
+            self.assertIn("b.yaml", _rel_files(repo))
+
+    def test_result_has_changes_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "a.yaml")
+            sync = self._sync(source, repo, ["*.yaml"])
+
+            self.assertTrue(sync.sync().has_changes)
+            self.assertFalse(sync.sync().has_changes)
+            _write(source / "a.yaml", "changed")
+            self.assertTrue(sync.sync().has_changes)
+
+
+class DeletionSafetyTests(SyncTestCase):
+    def test_unmanaged_target_files_not_deleted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "a.yaml")
+            sync = self._sync(source, repo, ["*.yaml"])
+
+            sync.sync()
+            _write(repo / "unmanaged.txt")
+
+            result = sync.sync()
+
+            self.assertEqual(result.deleted, [])
+            self.assertIn("unmanaged.txt", _rel_files(repo))
+
+    def test_excluded_target_files_not_deleted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "a.yaml")
+            sync = self._sync(source, repo, ["*.yaml"], exclude=["secrets.yaml"])
+
+            sync.sync()
+            _write(repo / "secrets.yaml")
+
+            result = sync.sync()
+
+            self.assertEqual(result.deleted, [])
+            self.assertIn("secrets.yaml", _rel_files(repo))
+
+
+class EmptyDirectoryTests(SyncTestCase):
+    def test_empty_directories(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "a.yaml")
+            _write(source / "sub/b.yaml")
+            (source / "empty").mkdir()
+            sync = self._sync(source, repo, ["**"])
+
+            sync.sync()
+            # An empty source directory is never mirrored.
+            self.assertFalse((repo / "empty").exists())
+
+            # After the last file in a directory is removed, the directory goes.
+            (source / "sub/b.yaml").unlink()
+            sync.sync()
+            self.assertFalse((repo / "sub").exists())
+
+
+class SourceIntegrityTests(SyncTestCase):
+    def test_source_unchanged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "a.yaml", "data")
+            _write(source / "sub/b.yaml", "nested")
+            sync = self._sync(source, repo, ["**"])
+
+            before = _snapshot(source)
+            sync.sync()
+            after = _snapshot(source)
+
+            self.assertEqual(before, after)
+
+
+class SafetyTests(SyncTestCase):
+    def test_source_equals_repository_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "same"
+            d.mkdir()
+            with self.assertRaises(SyncError):
+                Sync(d, d, PathFilter(include_patterns=["**"]))
+
+    def test_repository_inside_source_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source"
+            source.mkdir()
+            repo = source / "repo"
+            with self.assertRaises(SyncError):
+                Sync(source, repo, PathFilter(include_patterns=["**"]))
+
+    def test_path_traversal_prevented(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            outside = base / "outside.yaml"
+            _write(outside, "secret")
+            source.mkdir(parents=True)
+            (source / "escape.yaml").symlink_to(outside)
+
+            result = self._sync(source, repo, ["*.yaml"]).sync()
+
+            self.assertEqual(result.copied, [])
+            self.assertFalse((repo / "escape.yaml").exists())
+            self.assertEqual(_read(outside), "secret")
+
+
+class SymlinkTests(SyncTestCase):
+    def test_symlink_in_source_is_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "real.yaml", "data")
+            (source / "link.yaml").symlink_to("real.yaml")
+
+            result = self._sync(source, repo, ["*.yaml"]).sync()
+
+            self.assertEqual(result.copied, ["real.yaml"])
+            self.assertFalse((repo / "link.yaml").exists())
+            self.assertEqual(_read(repo / "real.yaml"), "data")
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
