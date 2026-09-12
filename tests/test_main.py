@@ -29,11 +29,18 @@ def _write_options(base: Path, **overrides) -> Path:
     return path
 
 
+def _fake_ssh_factory(private_key):
+    return mock.Mock(ssh_command="ssh -i /data/.ssh/id_github -o IdentitiesOnly=yes")
+
+
 class MainTests(unittest.TestCase):
     def _make_app(self, base: Path, **kwargs):
-        options_path = kwargs.pop("options_path", _write_options(base))
+        options_path = kwargs.pop("options_path", None)
+        if options_path is None:
+            options_path = _write_options(base)
         orchestrator_factory = kwargs.pop("orchestrator_factory", None)
         watcher_factory = kwargs.pop("watcher_factory", None)
+        ssh_factory = kwargs.pop("ssh_factory", None)
 
         orchestrator = mock.Mock()
         orchestrator.run_once.return_value = SyncRunResult(changed=False)
@@ -42,11 +49,14 @@ class MainTests(unittest.TestCase):
             orchestrator_factory = mock.Mock(return_value=orchestrator)
         if watcher_factory is None:
             watcher_factory = mock.Mock(return_value=mock.Mock())
+        if ssh_factory is None:
+            ssh_factory = _fake_ssh_factory
 
         app = main_module.App(
             options_path=options_path,
             orchestrator_factory=orchestrator_factory,
             watcher_factory=watcher_factory,
+            ssh_factory=ssh_factory,
             **kwargs,
         )
         return app, orchestrator_factory, watcher_factory
@@ -128,6 +138,80 @@ class MainTests(unittest.TestCase):
             self.assertEqual(app._initialize(), 1)
             self.assertIsNone(app._orchestrator)
 
+    def test_ssh_factory_receives_configured_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            key = "-----BEGIN OPENSSH PRIVATE KEY----- body -----END OPENSSH PRIVATE KEY-----"
+            options_path = _write_options(base, ssh_private_key=key)
+            ssh_factory = mock.Mock(return_value=mock.Mock(ssh_command="ssh -i /key"))
+            app, _, _ = self._make_app(
+                base, options_path=options_path, ssh_factory=ssh_factory
+            )
+
+            app._initialize()
+
+            ssh_factory.assert_called_once_with(key)
+
+    def test_remote_is_github_ssh_url(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, orchestrator_factory, _ = self._make_app(base)
+
+            app._initialize()
+
+            self.assertEqual(
+                orchestrator_factory.call_args.args[2],
+                "git@github.com:test-org/test-repo.git",
+            )
+
+    def test_ssh_command_passed_to_orchestrator(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            ssh_factory = mock.Mock(return_value=mock.Mock(ssh_command="ssh -i /custom/key"))
+            app, orchestrator_factory, _ = self._make_app(base, ssh_factory=ssh_factory)
+
+            app._initialize()
+
+            self.assertEqual(
+                orchestrator_factory.call_args.args[4], "ssh -i /custom/key"
+            )
+
+    def test_missing_ssh_key_returns_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _ = self._make_app(base, ssh_factory=main_module.prepare_ssh)
+
+            self.assertEqual(app._initialize(), 1)
+            self.assertIsNone(app._orchestrator)
+
+    def test_invalid_ssh_key_returns_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            options_path = _write_options(base, ssh_private_key="not-a-valid-key")
+            app, _, _ = self._make_app(
+                base, options_path=options_path, ssh_factory=main_module.prepare_ssh
+            )
+
+            self.assertEqual(app._initialize(), 1)
+            self.assertIsNone(app._orchestrator)
+
+    def test_ssh_key_not_logged_on_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            secret = "SUPERSECRETKEYBODY"
+            options_path = _write_options(
+                base, ssh_private_key=f"-----BEGIN {secret}-----"
+            )
+            app, _, _ = self._make_app(
+                base, options_path=options_path, ssh_factory=main_module.prepare_ssh
+            )
+
+            with self.assertLogs("ha_config2git", level="ERROR") as cm:
+                code = app._initialize()
+
+            self.assertEqual(code, 1)
+            self.assertNotIn(secret, "\n".join(cm.output))
+
 
     def test_watcher_started_and_stopped(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -178,6 +262,7 @@ class CallbackTests(unittest.TestCase):
             options_path=options_path,
             orchestrator_factory=mock.Mock(return_value=orchestrator),
             watcher_factory=mock.Mock(return_value=watcher),
+            ssh_factory=_fake_ssh_factory,
         )
         app._initialize()
         return app, orchestrator, watcher

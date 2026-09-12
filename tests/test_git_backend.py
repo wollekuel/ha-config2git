@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 APP_DIR = Path(__file__).resolve().parents[1] / "ha_config2git" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
@@ -276,6 +278,38 @@ class PushTests(unittest.TestCase):
             backend.commit("first")
             with self.assertRaises(GitBackendError):
                 backend.push("nonexistent-remote", "main")
+
+
+class SshPushTests(unittest.TestCase):
+    def test_push_with_ssh_command_sets_env(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = GitBackend(Path(tmp), "A", "a@example.com")
+            with mock.patch("git_backend.subprocess.run") as run_mock:
+                run_mock.return_value = mock.Mock(returncode=0, stdout="", stderr="")
+                backend.push("origin", "main", ssh_command="ssh -i /key")
+
+            env = run_mock.call_args.kwargs.get("env")
+            self.assertIsNotNone(env)
+            self.assertEqual(env["GIT_SSH_COMMAND"], "ssh -i /key")
+
+    def test_push_without_ssh_command_uses_default_env(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = GitBackend(Path(tmp), "A", "a@example.com")
+            with mock.patch("git_backend.subprocess.run") as run_mock:
+                run_mock.return_value = mock.Mock(returncode=0, stdout="", stderr="")
+                backend.push("origin", "main")
+
+            self.assertIsNone(run_mock.call_args.kwargs.get("env"))
+
+    def test_push_does_not_mutate_global_environment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = GitBackend(Path(tmp), "A", "a@example.com")
+            before = dict(os.environ)
+            with mock.patch("git_backend.subprocess.run") as run_mock:
+                run_mock.return_value = mock.Mock(returncode=0, stdout="", stderr="")
+                backend.push("origin", "main", ssh_command="ssh -i /key")
+
+            self.assertEqual(dict(os.environ), before)
 
 
 if __name__ == "__main__":

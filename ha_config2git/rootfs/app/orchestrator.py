@@ -35,9 +35,9 @@ class SyncRunResult:
 class Orchestrator:
     """Run a single sync-and-commit-and-push cycle.
 
-    The remote is injected here because the configuration does not contain one
-    yet (SSH/GitHub support arrives in a later phase). It may be a remote name
-    (e.g. ``"origin"``) or a URL/path understood by ``git push``.
+    The remote is injected (a URL or path understood by ``git push``). An
+    optional ``ssh_command`` is passed through to :meth:`GitBackend.push` so
+    that pushes to GitHub use the prepared SSH configuration.
     """
 
     def __init__(
@@ -46,11 +46,13 @@ class Orchestrator:
         repository_dir: str | Path,
         remote: str,
         config: Config,
+        ssh_command: str | None = None,
     ) -> None:
         self._source_dir = Path(source_dir)
         self._repository_dir = Path(repository_dir)
         self._remote = remote
         self._config = config
+        self._ssh_command = ssh_command
         self._filter = PathFilter(config.include_patterns, config.exclude_patterns)
 
     def run_once(self) -> SyncRunResult:
@@ -64,7 +66,11 @@ class Orchestrator:
             backend.add_all()
             committed = backend.commit(COMMIT_MESSAGE)
             if committed:
-                backend.push(self._remote, self._config.github_branch)
+                backend.push(
+                    self._remote,
+                    self._config.github_branch,
+                    ssh_command=self._ssh_command,
+                )
                 pushed = True
 
         return SyncRunResult(

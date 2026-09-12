@@ -7,6 +7,7 @@ Push and remote operations are implemented in a later phase.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
@@ -73,7 +74,11 @@ class GitBackend:
     # -- low level ------------------------------------------------------
 
     def _run(
-        self, args: list[str], *, check: bool = True
+        self,
+        args: list[str],
+        *,
+        check: bool = True,
+        env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess:
         command = ["git", *args]
         result = subprocess.run(
@@ -82,6 +87,7 @@ class GitBackend:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            env=env,
         )
         if check and result.returncode != 0:
             raise GitBackendError(
@@ -161,9 +167,19 @@ class GitBackend:
         self._run(["commit", "-m", message])
         return True
 
-    def push(self, remote: str, branch: str) -> None:
-        """Push the given branch to the configured remote."""
-        self._run(["push", remote, branch])
+    def push(
+        self, remote: str, branch: str, ssh_command: str | None = None
+    ) -> None:
+        """Push the given branch to the configured remote.
+
+        ``ssh_command`` is passed to git as the ``GIT_SSH_COMMAND`` environment
+        variable for this invocation only; the parent environment is never
+        modified.
+        """
+        env = None
+        if ssh_command is not None:
+            env = {**os.environ, "GIT_SSH_COMMAND": ssh_command}
+        self._run(["push", remote, branch], env=env)
 
     def log(self) -> list[str]:
         """Return the commit log as ``<short-hash> <subject>`` lines."""

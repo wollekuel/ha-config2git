@@ -260,7 +260,7 @@ class ErrorPropagationTests(unittest.TestCase):
 
             backend.add_all.assert_called_once()
             backend.commit.assert_called_once_with(COMMIT_MESSAGE)
-            backend.push.assert_called_once_with(str(bare), "main")
+            backend.push.assert_called_once_with(str(bare), "main", ssh_command=None)
 
 
 class MockBackendTests(unittest.TestCase):
@@ -279,6 +279,30 @@ class MockBackendTests(unittest.TestCase):
             backend.add_all.assert_not_called()
             backend.commit.assert_not_called()
             backend.push.assert_not_called()
+
+
+class SshCommandTests(unittest.TestCase):
+    def test_push_uses_ssh_command_when_configured(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            bare = base / "remote.git"
+            _init_bare(bare)
+            orchestrator = Orchestrator(
+                source, repo, str(bare), _config(), ssh_command="ssh -i /key"
+            )
+            _write(source / "configuration.yaml", "hello")
+
+            backend = mock.Mock()
+            backend.add_all.return_value = None
+            backend.commit.return_value = True
+            with mock.patch.object(orchestrator, "_get_backend", return_value=backend):
+                orchestrator.run_once()
+
+            backend.push.assert_called_once_with(
+                str(bare), "main", ssh_command="ssh -i /key"
+            )
 
 
 if __name__ == "__main__":

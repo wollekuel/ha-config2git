@@ -1,12 +1,10 @@
 """Application entry point for ha-config2git.
 
-Loads the configuration, builds the PathFilter, Orchestrator and Watcher,
-starts watching the Home Assistant configuration directory and runs a single
-synchronization pass for every relevant change. It blocks until SIGTERM/SIGINT
-and stops the watcher cleanly on shutdown.
-
-SSH/GitHub authentication is not implemented yet; the remote is a clearly
-marked placeholder.
+Loads the configuration, prepares the SSH key for GitHub pushes, builds the
+PathFilter, Orchestrator and Watcher, starts watching the Home Assistant
+configuration directory and runs a single synchronization pass for every
+relevant change. It blocks until SIGTERM/SIGINT and stops the watcher cleanly
+on shutdown.
 """
 
 from __future__ import annotations
@@ -21,15 +19,12 @@ from config import OPTIONS_PATH, ConfigError, load_config_from_path
 from git_backend import GitBackendError
 from orchestrator import Orchestrator
 from pathfilter import PathFilter
+from ssh import SshError, prepare_ssh, ssh_remote_url
 from sync import SyncError
 from watcher import Watcher, WatcherError
 
 SOURCE_DIR = "/config"
 REPOSITORY_DIR = "/data/repository"
-
-# Placeholder remote until SSH/GitHub support is implemented (later phase).
-# It only has to satisfy the existing Orchestrator / GitBackend.push() API.
-REMOTE_NAME = "origin"
 
 _LOG_LEVELS = {
     "debug": logging.DEBUG,
@@ -50,20 +45,21 @@ class App:
         *,
         source_dir: str | Path = SOURCE_DIR,
         repository_dir: str | Path = REPOSITORY_DIR,
-        remote: str = REMOTE_NAME,
         options_path: Path = OPTIONS_PATH,
         orchestrator_factory=Orchestrator,
         watcher_factory=Watcher,
+        ssh_factory=prepare_ssh,
     ) -> None:
         self._source_dir = source_dir
         self._repository_dir = repository_dir
-        self._remote = remote
         self._options_path = options_path
         self._orchestrator_factory = orchestrator_factory
         self._watcher_factory = watcher_factory
+        self._ssh_factory = ssh_factory
 
         self._log = logging.getLogger("ha_config2git")
         self._config = None
+        self._ssh_command = None
         self._orchestrator = None
         self._watcher = None
         self._shutdown_event = None
@@ -103,6 +99,13 @@ class App:
             self._log.info("  %s = %s", key, value)
 
         try:
+            ssh_setup = self._ssh_factory(config.ssh_private_key)
+        except SshError as exc:
+            self._log.error("SSH setup failed: %s", exc)
+            return 1
+        self._ssh_command = ssh_setup.ssh_command
+
+        try:
             self._build_components()
         except (WatcherError, SyncError, GitBackendError) as exc:
             self._log.error("Failed to initialize components: %s", exc)
@@ -114,8 +117,13 @@ class App:
         path_filter = PathFilter(
             self._config.include_patterns, self._config.exclude_patterns
         )
+        remote = ssh_remote_url(self._config.github_repository)
         self._orchestrator = self._orchestrator_factory(
-            self._source_dir, self._repository_dir, self._remote, self._config
+            self._source_dir,
+            self._repository_dir,
+            remote,
+            self._config,
+            self._ssh_command,
         )
         self._watcher = self._watcher_factory(
             self._source_dir,
