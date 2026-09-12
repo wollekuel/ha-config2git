@@ -84,9 +84,11 @@ class Orchestrator:
     def _get_backend(self) -> GitBackend:
         repo = self._repository_dir
         if (repo / ".git").is_dir():
-            return GitBackend.open(
+            backend = GitBackend.open(
                 repo, self._config.git_author_name, self._config.git_author_email
             )
+            backend.set_branch(self._config.github_branch)
+            return backend
         return GitBackend.init(
             repo,
             self._config.git_author_name,

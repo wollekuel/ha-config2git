@@ -2,7 +2,6 @@
 
 Wraps the ``git`` command line program via ``subprocess`` and intentionally
 has no knowledge of Home Assistant, ``/config``, the PathFilter, SSH or GitHub.
-Push and remote operations are implemented in a later phase.
 """
 
 from __future__ import annotations

@@ -13,7 +13,7 @@ APP_DIR = Path(__file__).resolve().parents[1] / "ha_config2git" / "rootfs" / "ap
 sys.path.insert(0, str(APP_DIR))
 
 from config import load_config  # noqa: E402
-from git_backend import GitBackendError  # noqa: E402
+from git_backend import GitBackend, GitBackendError  # noqa: E402
 from orchestrator import COMMIT_MESSAGE, Orchestrator, SyncRunResult  # noqa: E402
 from sync import SyncError  # noqa: E402
 
@@ -303,6 +303,73 @@ class SshCommandTests(unittest.TestCase):
             backend.push.assert_called_once_with(
                 str(bare), "main", ssh_command="ssh -i /key"
             )
+
+
+class BranchConfigurationTests(unittest.TestCase):
+    def test_custom_branch_is_used_for_commit_and_push(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            bare = base / "remote.git"
+            _init_bare(bare)
+            orchestrator = Orchestrator(
+                source, repo, str(bare), _config(github_branch="develop")
+            )
+            _write(source / "configuration.yaml", "hello")
+
+            result = orchestrator.run_once()
+
+            self.assertTrue(result.pushed)
+            self.assertIn("develop", _remote_branches(bare))
+            self.assertNotIn("main", _remote_branches(bare))
+            self.assertEqual(_remote_commit_count(bare, "develop"), 1)
+            self.assertEqual(
+                _remote_file_content(bare, "develop", "configuration.yaml"), "hello"
+            )
+
+    def test_existing_repository_on_different_branch_is_switched(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            bare = base / "remote.git"
+            _init_bare(bare)
+            # A pre-existing repository that was initialized on "master".
+            GitBackend.init(repo, "Prev", "prev@example.com", "master")
+
+            orchestrator = Orchestrator(source, repo, str(bare), _config())
+            _write(source / "configuration.yaml", "hello")
+
+            result = orchestrator.run_once()
+
+            self.assertTrue(result.pushed)
+            self.assertIn("main", _remote_branches(bare))
+            self.assertNotIn("master", _remote_branches(bare))
+            self.assertEqual(
+                _remote_file_content(bare, "main", "configuration.yaml"), "hello"
+            )
+
+    def test_push_rejected_when_remote_has_existing_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            bare = base / "remote.git"
+            _init_bare(bare)
+            # Seed the remote with unrelated history on "main".
+            seed = base / "seed"
+            backend = GitBackend.init(seed, "Seed", "seed@example.com", "main")
+            _write(seed / "README.md", "seed")
+            backend.add_all()
+            backend.commit("seed commit")
+            backend.push(str(bare), "main")
+
+            orchestrator = Orchestrator(source, repo, str(bare), _config())
+            _write(source / "configuration.yaml", "hello")
+
+            with self.assertRaises(GitBackendError):
+                orchestrator.run_once()
 
 
 if __name__ == "__main__":
