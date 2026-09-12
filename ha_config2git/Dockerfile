@@ -13,4 +13,7 @@ RUN apk add --no-cache \
 COPY run.sh /
 RUN chmod a+x /run.sh
 
+# Copy the application code
+COPY rootfs /
+
 CMD [ "/run.sh" ]
