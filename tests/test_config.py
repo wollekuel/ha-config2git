@@ -221,6 +221,42 @@ class DefaultsAndSummaryTests(unittest.TestCase):
             config.github_branch = "other"
 
 
+class SshPrivateKeyTests(unittest.TestCase):
+    def test_default_is_empty(self):
+        config = load_config({"github_repository": "owner/repo"})
+        self.assertEqual(config.ssh_private_key, "")
+
+    def test_ssh_private_key_loaded(self):
+        key = "-----BEGIN OPENSSH PRIVATE KEY----- body -----END OPENSSH PRIVATE KEY-----"
+        config = load_config(
+            {"github_repository": "owner/repo", "ssh_private_key": key}
+        )
+        self.assertEqual(config.ssh_private_key, key)
+
+    def test_ssh_private_key_whitespace_is_stripped(self):
+        config = load_config(
+            {"github_repository": "owner/repo", "ssh_private_key": "  key value  "}
+        )
+        self.assertEqual(config.ssh_private_key, "key value")
+
+    def test_ssh_private_key_must_be_string(self):
+        with self.assertRaises(ConfigError):
+            load_config({"github_repository": "owner/repo", "ssh_private_key": 123})
+
+    def test_summary_omits_ssh_private_key(self):
+        config = load_config(
+            {"github_repository": "owner/repo", "ssh_private_key": "some-key-value"}
+        )
+        self.assertNotIn("ssh_private_key", config.summary())
+
+    def test_summary_never_leaks_key_content(self):
+        secret = "SUPER-SECRET-PRIVATE-KEY-BODY-12345"
+        config = load_config(
+            {"github_repository": "owner/repo", "ssh_private_key": secret}
+        )
+        self.assertNotIn(secret, str(config.summary()))
+
+
 class LoadConfigFromPathTests(unittest.TestCase):
     def test_valid_json_file(self):
         with tempfile.TemporaryDirectory() as tmp:

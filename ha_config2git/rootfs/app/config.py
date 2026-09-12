@@ -28,6 +28,7 @@ DEFAULTS: dict[str, Any] = {
     "commit_debounce_seconds": 30,
     "push_interval_seconds": 300,
     "log_level": "info",
+    "ssh_private_key": "",
     "include_patterns": [
         "*.yaml",
         "*.yml",
@@ -60,11 +61,14 @@ class Config:
     commit_debounce_seconds: int
     push_interval_seconds: int
     log_level: str
+    ssh_private_key: str
     include_patterns: tuple[str, ...]
     exclude_patterns: tuple[str, ...]
 
     def summary(self) -> dict[str, Any]:
         """Return a logging-safe representation without secrets."""
+        # ssh_private_key is intentionally omitted: its content must never
+        # appear in logs or summaries.
         return {
             "github_repository": self.github_repository,
             "github_branch": self.github_branch,
@@ -96,6 +100,20 @@ def _normalize_repository(value: Any) -> str:
 def _as_non_empty_str(value: Any, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"{field} must be a non-empty string")
+    return value.strip()
+
+
+def _normalize_ssh_private_key(value: Any) -> str:
+    """Return the SSH private key string (may be empty).
+
+    The key is a secret: its content must never appear in summaries or error
+    messages. Only the type is validated here; whether a key is required for
+    operation is decided in a later integration step.
+    """
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ConfigError("ssh_private_key must be a string")
     return value.strip()
 
 
@@ -147,6 +165,7 @@ def load_config(options: Mapping[str, Any]) -> Config:
         commit_debounce_seconds=merged["commit_debounce_seconds"],
         push_interval_seconds=merged["push_interval_seconds"],
         log_level=merged["log_level"],
+        ssh_private_key=_normalize_ssh_private_key(merged.get("ssh_private_key")),
         include_patterns=include_patterns,
         exclude_patterns=_normalize_patterns(
             merged.get("exclude_patterns"), "exclude_patterns"

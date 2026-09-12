@@ -24,6 +24,7 @@ options:
   commit_debounce_seconds: 30
   push_interval_seconds: 300
   log_level: "info"
+  ssh_private_key: ""
   include_patterns:
     - "*.yaml"
     - "*.yml"
@@ -44,6 +45,7 @@ schema:
   commit_debounce_seconds: "int(1,)"
   push_interval_seconds: "int(1,)"
   log_level: "match(^(debug|info|warning|error)$)"
+  ssh_private_key: password
   include_patterns:
     - str
   exclude_patterns:
