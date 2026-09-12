@@ -161,6 +161,10 @@ class GitBackend:
         self._run(["commit", "-m", message])
         return True
 
+    def push(self, remote: str, branch: str) -> None:
+        """Push the given branch to the configured remote."""
+        self._run(["push", remote, branch])
+
     def log(self) -> list[str]:
         """Return the commit log as ``<short-hash> <subject>`` lines."""
         head = self._run(["rev-parse", "--verify", "--quiet", "HEAD"], check=False)

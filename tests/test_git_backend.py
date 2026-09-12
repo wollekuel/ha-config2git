@@ -168,6 +168,116 @@ class GlobalConfigUntouchedTests(unittest.TestCase):
         self.assertEqual(_global_config("user.email"), before_email)
 
 
+def _make_remote(work: Path, bare: Path) -> None:
+    subprocess.run(
+        ["git", "init", "--bare", str(bare)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(work), "remote", "add", "origin", str(bare)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+
+def _remote_branches(bare: Path) -> list[str]:
+    result = subprocess.run(
+        ["git", "--git-dir", str(bare), "for-each-ref",
+         "--format=%(refname:short)", "refs/heads"],
+        capture_output=True,
+        text=True,
+    )
+    return [line for line in result.stdout.splitlines() if line.strip()]
+
+
+def _remote_commit_count(bare: Path, branch: str) -> int:
+    result = subprocess.run(
+        ["git", "--git-dir", str(bare), "rev-list", "--count", branch],
+        capture_output=True,
+        text=True,
+    )
+    return int(result.stdout.strip())
+
+
+def _remote_log(bare: Path, branch: str) -> str:
+    result = subprocess.run(
+        ["git", "--git-dir", str(bare), "log", "--oneline", branch],
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout
+
+
+class PushTests(unittest.TestCase):
+    def test_push_commit_to_remote(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            work = base / "work"
+            bare = base / "remote.git"
+            backend = GitBackend.init(work, "A", "a@example.com", "main")
+            _make_remote(work, bare)
+
+            _write(work, "configuration.yaml")
+            backend.add_all()
+            backend.commit("first commit")
+            backend.push("origin", "main")
+
+            self.assertIn("main", _remote_branches(bare))
+            self.assertEqual(_remote_commit_count(bare, "main"), 1)
+            self.assertIn("first commit", _remote_log(bare, "main"))
+
+    def test_second_commit_and_push(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            work = base / "work"
+            bare = base / "remote.git"
+            backend = GitBackend.init(work, "A", "a@example.com", "main")
+            _make_remote(work, bare)
+
+            _write(work, "a.yaml")
+            backend.add_all()
+            backend.commit("first")
+            backend.push("origin", "main")
+
+            _write(work, "a.yaml", "changed")
+            backend.add_all()
+            backend.commit("second")
+            backend.push("origin", "main")
+
+            self.assertEqual(_remote_commit_count(bare, "main"), 2)
+            self.assertIn("second", _remote_log(bare, "main"))
+
+    def test_push_without_new_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            work = base / "work"
+            bare = base / "remote.git"
+            backend = GitBackend.init(work, "A", "a@example.com", "main")
+            _make_remote(work, bare)
+
+            _write(work, "a.yaml")
+            backend.add_all()
+            backend.commit("first")
+            backend.push("origin", "main")
+
+            # Pushing again with nothing new must not raise.
+            backend.push("origin", "main")
+            self.assertEqual(_remote_commit_count(bare, "main"), 1)
+
+    def test_invalid_remote_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / "work"
+            backend = GitBackend.init(work, "A", "a@example.com", "main")
+            _write(work, "a.yaml")
+            backend.add_all()
+            backend.commit("first")
+            with self.assertRaises(GitBackendError):
+                backend.push("nonexistent-remote", "main")
+
+
 if __name__ == "__main__":
     unittest.main()
 
