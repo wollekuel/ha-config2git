@@ -14,7 +14,7 @@ sys.path.insert(0, str(APP_DIR))
 
 from config import load_config  # noqa: E402
 from git_backend import GitBackend, GitBackendError  # noqa: E402
-from orchestrator import COMMIT_MESSAGE, Orchestrator, SyncRunResult  # noqa: E402
+from orchestrator import Orchestrator, SyncRunResult  # noqa: E402
 from sync import SyncError  # noqa: E402
 
 
@@ -110,7 +110,10 @@ class ChangeTests(unittest.TestCase):
             self.assertEqual(
                 _remote_file_content(bare, "main", "configuration.yaml"), "hello"
             )
-            self.assertIn(COMMIT_MESSAGE, _remote_log(bare))
+            self.assertIn(
+                "Sync Home Assistant configuration: configuration.yaml",
+                _remote_log(bare),
+            )
 
     def test_multiple_changes_produce_single_commit_and_push(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -198,7 +201,10 @@ class CommitContentTests(unittest.TestCase):
             self.assertEqual(
                 _remote_file_content(bare, "main", "custom/flag.yaml"), "nested"
             )
-            self.assertIn(COMMIT_MESSAGE, _remote_log(bare))
+            self.assertIn(
+                "Sync Home Assistant configuration: configuration.yaml, custom/flag.yaml",
+                _remote_log(bare),
+            )
 
     def test_push_lands_in_local_bare_repository(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -241,7 +247,9 @@ class ErrorPropagationTests(unittest.TestCase):
                     orchestrator.run_once()
 
             backend.add_all.assert_called_once()
-            backend.commit.assert_called_once_with(COMMIT_MESSAGE)
+            backend.commit.assert_called_once_with(
+                "Sync Home Assistant configuration: configuration.yaml"
+            )
             backend.push.assert_not_called()
 
     def test_git_backend_error_on_push_propagates(self):
@@ -259,7 +267,9 @@ class ErrorPropagationTests(unittest.TestCase):
                     orchestrator.run_once()
 
             backend.add_all.assert_called_once()
-            backend.commit.assert_called_once_with(COMMIT_MESSAGE)
+            backend.commit.assert_called_once_with(
+                "Sync Home Assistant configuration: configuration.yaml"
+            )
             backend.push.assert_called_once_with(str(bare), "main", ssh_command=None)
 
 
@@ -370,6 +380,78 @@ class BranchConfigurationTests(unittest.TestCase):
 
             with self.assertRaises(GitBackendError):
                 orchestrator.run_once()
+
+
+class CommitMessageTests(unittest.TestCase):
+    def test_default_template_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source, repo, bare, orchestrator = _setup(base)
+            _write(source / "configuration.yaml", "hello")
+
+            orchestrator.run_once()
+
+            self.assertIn(
+                "Sync Home Assistant configuration: configuration.yaml",
+                _remote_log(bare),
+            )
+
+    def test_custom_fixed_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            bare = base / "remote.git"
+            _init_bare(bare)
+            orchestrator = Orchestrator(
+                source,
+                repo,
+                str(bare),
+                _config(commit_message_template="Update config"),
+            )
+            _write(source / "configuration.yaml", "hello")
+
+            orchestrator.run_once()
+
+            self.assertIn("Update config", _remote_log(bare))
+
+    def test_custom_template_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            bare = base / "remote.git"
+            _init_bare(bare)
+            orchestrator = Orchestrator(
+                source,
+                repo,
+                str(bare),
+                _config(
+                    commit_message_template="Changed {changed_count}: {changed_files}"
+                ),
+            )
+            _write(source / "a.yaml", "A")
+            _write(source / "b.yaml", "B")
+
+            orchestrator.run_once()
+
+            self.assertIn("Changed 2: a.yaml, b.yaml", _remote_log(bare))
+
+    def test_rendered_message_passed_to_backend(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source, repo, bare, orchestrator = _setup(base)
+            _write(source / "configuration.yaml", "hello")
+
+            backend = mock.Mock()
+            backend.add_all.return_value = None
+            backend.commit.return_value = True
+            with mock.patch.object(orchestrator, "_get_backend", return_value=backend):
+                orchestrator.run_once()
+
+            backend.commit.assert_called_once_with(
+                "Sync Home Assistant configuration: configuration.yaml"
+            )
 
 
 if __name__ == "__main__":

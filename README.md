@@ -15,7 +15,7 @@ ha-config2git läuft als kleiner Container innerhalb von Home Assistant
   konfigurierbarer Include-/Exclude-Patterns),
 - kopiert geänderte Dateien in ein lokales Git-Repository unter
   `/data/repository`,
-- erzeugt einen Git-Commit (Meldung: `Sync Home Assistant configuration`),
+- erzeugt einen Git-Commit mit informativer, konfigurierbarer Meldung,
 - pusht den Commit per SSH mit einem repository-scoped Deploy Key in ein
   GitHub-Repository.
 
@@ -30,7 +30,8 @@ Home-Assistant-Konfiguration auf GitHub.
   werden (z. B. nur `*.yaml`, oder alles außer `secrets.yaml`).
 - **Debouncing** — Änderungen werden nach einer konfigurierbaren Ruhephase
   gebündelt, sodass eine Reihe von Edits zu einem einzelnen Commit führt.
-- **Git-Commit** — mit festem Commit-Text und konfigurierbarem Autor.
+- **Git-Commit** — mit informativer, konfigurierbarer Commit-Message (Template)
+  und konfigurierbarem Autor.
 - **Konfigurierbarer GitHub-Branch** — wird für Commit und Push verwendet.
 - **SSH-Authentifizierung** über einen repository-scoped Deploy Key.
 - **Strict Host Key Checking** mit gepinnten GitHub-Host-Keys.
@@ -147,12 +148,50 @@ Folgende Optionen sind verfügbar. Die Defaults entsprechen `config.yaml`.
 | `github_branch` | String | `main` | Branch, der für Commit und Push verwendet wird. |
 | `git_author_name` | String | `ha-config2git` | Name, der in jedem Commit vermerkt wird. |
 | `git_author_email` | String | `ha-config2git@home-assistant` | E-Mail, die in jedem Commit vermerkt wird. |
+| `commit_message_template` | String | `Sync Home Assistant configuration: {changed_files}` | Template für die Commit-Message (siehe [Commit-Message-Template](#commit-message-template)). |
 | `commit_debounce_seconds` | Ganzzahl | `30` | Ruhephase (Sekunden) nach der letzten Änderung, bevor ein Commit erzeugt wird. |
 | `push_interval_seconds` | Ganzzahl | `300` | **Reserviert, aktuell ungenutzt.** Im Schema vorhanden und validiert, aber die App pusht derzeit nur direkt nach einem Commit. |
 | `log_level` | String | `info` | Log-Level: `debug`, `info`, `warning` oder `error`. |
 | `ssh_private_key` | String (Passwort) | `""` | Der private SSH-Schlüssel (OpenSSH-Format). Bei leerem Wert verweigert die App den Start. |
 | `include_patterns` | Liste von Strings | siehe unten | Glob-Patterns für Dateien, die synchronisiert werden. Mindestens ein Eintrag erforderlich. |
 | `exclude_patterns` | Liste von Strings | siehe unten | Glob-Patterns für Dateien, die ignoriert werden. Darf leer sein. |
+
+### Commit-Message-Template
+
+Mit `commit_message_template` legst du den Text jedes Commits fest. Der Text darf
+feste Zeichenfolgen und Platzhalter der Form `{name}` enthalten. Folgende
+Platzhalter werden unterstützt:
+
+| Platzhalter | Bedeutung |
+| --- | --- |
+| `{changed_count}` | Anzahl aller geänderten Dateien (neu + geändert + gelöscht). |
+| `{changed_files}` | Kommagetrennte Liste der geänderten relativen Pfade. Maximal 5 Pfade werden direkt ausgegeben; bei mehr als 5 Dateien folgt `… (+M more)` mit der Anzahl der restlichen Dateien. |
+| `{added_count}` | Anzahl neu hinzugefügter Dateien. |
+| `{modified_count}` | Anzahl geänderter, bereits vorhandener Dateien. |
+| `{deleted_count}` | Anzahl gelöschter Dateien. |
+
+Die generierte Commit-Message ist auf **maximal 200 Zeichen** begrenzt; bei
+Bedarf wird die Dateiliste gekürzt, ohne die `… (+M more)`-Darstellung zu
+beschädigen. Datei**inhalte** oder Diff-Inhalte werden niemals in die
+Commit-Message aufgenommen — nur relative Pfade und Zähler.
+
+Beispiele mit dem Default-Template:
+
+```text
+Sync Home Assistant configuration: configuration.yaml
+Sync Home Assistant configuration: automations.yaml, scripts.yaml
+Sync Home Assistant configuration: a.yaml, b.yaml, c.yaml, d.yaml, e.yaml, … (+7 more)
+```
+
+Eigene Templates, zum Beispiel:
+
+```yaml
+commit_message_template: "Update {changed_count} files"
+commit_message_template: "Changed {changed_files}"
+```
+
+Ungültige Templates (unbekannte Platzhalter, fehlerhafte Klammern) werden beim
+Start der App abgelehnt.
 
 ### Default-Include-/Exclude-Patterns
 
@@ -346,6 +385,7 @@ github_repository: myuser/my-homeassistant-config
 github_branch: main
 git_author_name: ha-config2git
 git_author_email: ha-config2git@home-assistant
+commit_message_template: "Sync Home Assistant configuration: {changed_files}"
 commit_debounce_seconds: 30
 push_interval_seconds: 300
 log_level: info
@@ -382,7 +422,7 @@ Schlüssel in Dokumentation oder Commits ein.
 5. Nach einer Logzeile wie
    `Synchronized: … committed=True, pushed=True` suchen.
 6. Das GitHub-Repository öffnen und prüfen, dass ein neuer Commit
-   (`Sync Home Assistant configuration`) auf dem Branch erscheint.
+   (`Sync Home Assistant configuration: <dateien>`) auf dem Branch erscheint.
 
 Ein erfolgreicher Test zeigt `committed=True, pushed=True` in den Logs und
 einen neuen Commit auf GitHub. Siehst du stattdessen `committed=True,
@@ -461,4 +501,3 @@ Noch nicht implementiert:
 - Home-Assistant-API-Integration.
 - Periodischer Push (`push_interval_seconds` ist reserviert, aber ungenutzt).
 - Inotify-basierte Überwachung (der Watcher verwendet derzeit Polling).
-- Konfigurierbare Commit-Meldungen (die Meldung ist fest).

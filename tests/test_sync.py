@@ -197,6 +197,93 @@ class IncrementalTests(SyncTestCase):
             self.assertTrue(sync.sync().has_changes)
 
 
+class ChangeClassificationTests(SyncTestCase):
+    def test_new_files_classified_as_added(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "a.yaml")
+            _write(source / "b.yaml")
+
+            result = self._sync(source, repo, ["*.yaml"]).sync()
+
+            self.assertEqual(result.added, ["a.yaml", "b.yaml"])
+            self.assertEqual(result.modified, [])
+            self.assertEqual(result.deleted, [])
+            self.assertEqual(result.copied, ["a.yaml", "b.yaml"])
+
+    def test_changed_files_classified_as_modified(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "a.yaml", "v1")
+            sync = self._sync(source, repo, ["*.yaml"])
+
+            sync.sync()
+            _write(source / "a.yaml", "v2")
+            result = sync.sync()
+
+            self.assertEqual(result.added, [])
+            self.assertEqual(result.modified, ["a.yaml"])
+            self.assertEqual(result.deleted, [])
+            self.assertEqual(result.copied, ["a.yaml"])
+
+    def test_deleted_files_classified_as_deleted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "a.yaml")
+            sync = self._sync(source, repo, ["*.yaml"])
+
+            sync.sync()
+            (source / "a.yaml").unlink()
+            result = sync.sync()
+
+            self.assertEqual(result.added, [])
+            self.assertEqual(result.modified, [])
+            self.assertEqual(result.deleted, ["a.yaml"])
+            self.assertEqual(result.copied, [])
+
+    def test_mixed_add_modify_delete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "a.yaml", "v1")
+            _write(source / "b.yaml", "v1")
+            sync = self._sync(source, repo, ["*.yaml"])
+
+            sync.sync()
+            _write(source / "c.yaml", "v1")
+            _write(source / "a.yaml", "v2")
+            (source / "b.yaml").unlink()
+            result = sync.sync()
+
+            self.assertEqual(result.added, ["c.yaml"])
+            self.assertEqual(result.modified, ["a.yaml"])
+            self.assertEqual(result.deleted, ["b.yaml"])
+            self.assertEqual(result.copied, ["a.yaml", "c.yaml"])
+
+    def test_excluded_files_never_classified(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "a.yaml")
+            _write(source / "secrets.yaml")
+            sync = self._sync(source, repo, ["*.yaml"], exclude=["secrets.yaml"])
+
+            result = sync.sync()
+
+            self.assertEqual(result.added, ["a.yaml"])
+            self.assertEqual(result.modified, [])
+            self.assertEqual(result.deleted, [])
+            self.assertNotIn("secrets.yaml", result.copied)
+
+
 class DeletionSafetyTests(SyncTestCase):
     def test_unmanaged_target_files_not_deleted(self):
         with tempfile.TemporaryDirectory() as tmp:

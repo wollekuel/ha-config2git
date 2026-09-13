@@ -23,13 +23,19 @@ class SyncError(Exception):
 class SyncResult:
     """Outcome of a single sync run."""
 
-    copied: list[str] = field(default_factory=list)
+    added: list[str] = field(default_factory=list)
+    modified: list[str] = field(default_factory=list)
     deleted: list[str] = field(default_factory=list)
 
     @property
+    def copied(self) -> list[str]:
+        """Return added and modified paths combined, sorted (compatibility)."""
+        return sorted(self.added + self.modified)
+
+    @property
     def has_changes(self) -> bool:
-        """Return True if any file was copied or deleted."""
-        return bool(self.copied or self.deleted)
+        """Return True if any file was added, modified or deleted."""
+        return bool(self.added or self.modified or self.deleted)
 
 
 class Sync:
@@ -69,7 +75,8 @@ class Sync:
         self._copy_source_files(result)
         self._delete_stale_files(result)
         self._remove_empty_dirs()
-        result.copied.sort()
+        result.added.sort()
+        result.modified.sort()
         result.deleted.sort()
         return result
 
@@ -91,7 +98,8 @@ class Sync:
                 if not self._filter.matches(rel):
                     continue
                 dst = self._target(rel)
-                if dst.is_file() and not dst.is_symlink():
+                existed = dst.is_file() and not dst.is_symlink()
+                if existed:
                     try:
                         if src.read_bytes() == dst.read_bytes():
                             continue
@@ -101,7 +109,10 @@ class Sync:
                     dst.unlink()
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst)
-                result.copied.append(rel)
+                if existed:
+                    result.modified.append(rel)
+                else:
+                    result.added.append(rel)
 
     def _delete_stale_files(self, result: SyncResult) -> None:
         for root, _dirs, files in os.walk(self._repo):

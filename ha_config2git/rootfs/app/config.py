@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+from commit_message import TemplateError, validate_template
 from pathfilter import normalize_pattern
 
 OPTIONS_PATH = Path("/data/options.json")
@@ -34,6 +35,7 @@ DEFAULTS: dict[str, Any] = {
     "github_branch": "main",
     "git_author_name": "ha-config2git",
     "git_author_email": "ha-config2git@home-assistant",
+    "commit_message_template": "Sync Home Assistant configuration: {changed_files}",
     "commit_debounce_seconds": 30,
     "push_interval_seconds": 300,
     "log_level": "info",
@@ -67,6 +69,7 @@ class Config:
     github_branch: str
     git_author_name: str
     git_author_email: str
+    commit_message_template: str
     commit_debounce_seconds: int
     push_interval_seconds: int
     log_level: str
@@ -83,6 +86,7 @@ class Config:
             "github_branch": self.github_branch,
             "git_author_name": self.git_author_name,
             "git_author_email": self.git_author_email,
+            "commit_message_template": self.commit_message_template,
             "commit_debounce_seconds": self.commit_debounce_seconds,
             "push_interval_seconds": self.push_interval_seconds,
             "log_level": self.log_level,
@@ -110,6 +114,19 @@ def _as_non_empty_str(value: Any, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"{field} must be a non-empty string")
     return value.strip()
+
+
+def _normalize_commit_message_template(value: Any) -> str:
+    if not isinstance(value, str):
+        raise ConfigError("commit_message_template must be a string")
+    template = value.strip()
+    if not template:
+        raise ConfigError("commit_message_template must not be empty")
+    try:
+        validate_template(template)
+    except TemplateError as exc:
+        raise ConfigError(str(exc)) from exc
+    return template
 
 
 def _normalize_ssh_private_key(value: Any) -> str:
@@ -193,6 +210,9 @@ def load_config(options: Mapping[str, Any]) -> Config:
         ),
         git_author_email=_as_non_empty_str(
             merged.get("git_author_email"), "git_author_email"
+        ),
+        commit_message_template=_normalize_commit_message_template(
+            merged.get("commit_message_template")
         ),
         commit_debounce_seconds=merged["commit_debounce_seconds"],
         push_interval_seconds=merged["push_interval_seconds"],

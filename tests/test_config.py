@@ -221,6 +221,102 @@ class DefaultsAndSummaryTests(unittest.TestCase):
             config.github_branch = "other"
 
 
+class CommitMessageTemplateTests(unittest.TestCase):
+    def test_default_template(self):
+        config = load_config({"github_repository": "owner/repo"})
+        self.assertEqual(
+            config.commit_message_template,
+            "Sync Home Assistant configuration: {changed_files}",
+        )
+
+    def test_custom_template(self):
+        config = load_config(
+            {
+                "github_repository": "owner/repo",
+                "commit_message_template": "Update {changed_count} files",
+            }
+        )
+        self.assertEqual(
+            config.commit_message_template, "Update {changed_count} files"
+        )
+
+    def test_fixed_text_without_placeholders(self):
+        config = load_config(
+            {
+                "github_repository": "owner/repo",
+                "commit_message_template": "Update config",
+            }
+        )
+        self.assertEqual(config.commit_message_template, "Update config")
+
+    def test_unknown_placeholder_raises(self):
+        with self.assertRaises(ConfigError):
+            load_config(
+                {"github_repository": "owner/repo", "commit_message_template": "{branch}"}
+            )
+
+    def test_invalid_syntax_missing_brace_raises(self):
+        with self.assertRaises(ConfigError):
+            load_config(
+                {
+                    "github_repository": "owner/repo",
+                    "commit_message_template": "{changed_count",
+                }
+            )
+
+    def test_invalid_syntax_stray_brace_raises(self):
+        with self.assertRaises(ConfigError):
+            load_config(
+                {
+                    "github_repository": "owner/repo",
+                    "commit_message_template": "changed_count}",
+                }
+            )
+
+    def test_format_spec_rejected(self):
+        with self.assertRaises(ConfigError):
+            load_config(
+                {
+                    "github_repository": "owner/repo",
+                    "commit_message_template": "{changed_files:>10}",
+                }
+            )
+
+    def test_empty_template_raises(self):
+        with self.assertRaises(ConfigError):
+            load_config(
+                {
+                    "github_repository": "owner/repo",
+                    "commit_message_template": "   ",
+                }
+            )
+
+    def test_non_string_raises(self):
+        with self.assertRaises(ConfigError):
+            load_config(
+                {"github_repository": "owner/repo", "commit_message_template": 123}
+            )
+
+    def test_error_message_does_not_leak_template_content(self):
+        secret = "MY-SECRET-TEMPLATE-CONTENT"
+        with self.assertRaises(ConfigError) as ctx:
+            load_config(
+                {
+                    "github_repository": "owner/repo",
+                    "commit_message_template": f"{secret} {{bad}}",
+                }
+            )
+        self.assertNotIn(secret, str(ctx.exception))
+
+    def test_summary_includes_template(self):
+        config = load_config({"github_repository": "owner/repo"})
+        self.assertIn("commit_message_template", config.summary())
+        self.assertEqual(
+            config.summary()["commit_message_template"],
+            "Sync Home Assistant configuration: {changed_files}",
+        )
+
+
 class SshPrivateKeyTests(unittest.TestCase):
     def test_default_is_empty(self):
         config = load_config({"github_repository": "owner/repo"})

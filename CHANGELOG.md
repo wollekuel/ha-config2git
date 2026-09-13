@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Configurable commit messages via `commit_message_template` with placeholders
+  `{changed_count}`, `{changed_files}`, `{added_count}`, `{modified_count}` and
+  `{deleted_count}`. The default is now an informative message that lists the
+  changed files (`Sync Home Assistant configuration: {changed_files}`).
+- Commit message templates are validated at startup (unknown placeholders and
+  invalid syntax are rejected). Rendered messages are capped at 200 characters
+  and the file list is truncated deterministically (`… (+M more)`).
+
 ## [0.2.0]
 
 ### Added

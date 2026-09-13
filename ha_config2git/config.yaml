@@ -21,6 +21,7 @@ options:
   github_branch: "main"
   git_author_name: "ha-config2git"
   git_author_email: "ha-config2git@home-assistant"
+  commit_message_template: "Sync Home Assistant configuration: {changed_files}"
   commit_debounce_seconds: 30
   push_interval_seconds: 300
   log_level: "info"
@@ -42,6 +43,7 @@ schema:
   github_branch: str
   git_author_name: str
   git_author_email: str
+  commit_message_template: str
   commit_debounce_seconds: "int(1,)"
   push_interval_seconds: "int(1,)"
   log_level: "match(^(debug|info|warning|error)$)"

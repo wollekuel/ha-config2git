@@ -13,12 +13,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from commit_message import render_commit_message
 from config import Config
 from git_backend import GitBackend
 from pathfilter import PathFilter
 from sync import Sync
-
-COMMIT_MESSAGE = "Sync Home Assistant configuration"
 
 
 @dataclass
@@ -64,7 +63,13 @@ class Orchestrator:
         if result.has_changes:
             backend = self._get_backend()
             backend.add_all()
-            committed = backend.commit(COMMIT_MESSAGE)
+            message = render_commit_message(
+                self._config.commit_message_template,
+                added=result.added,
+                modified=result.modified,
+                deleted=result.deleted,
+            )
+            committed = backend.commit(message)
             if committed:
                 backend.push(
                     self._remote,
