@@ -150,7 +150,9 @@ class MainTests(unittest.TestCase):
 
             app._initialize()
 
-            ssh_factory.assert_called_once_with(key)
+            ssh_factory.assert_called_once_with(
+                "-----BEGIN OPENSSH PRIVATE KEY-----\nbody\n-----END OPENSSH PRIVATE KEY-----\n"
+            )
 
     def test_remote_is_github_ssh_url(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -231,7 +231,10 @@ class SshPrivateKeyTests(unittest.TestCase):
         config = load_config(
             {"github_repository": "owner/repo", "ssh_private_key": key}
         )
-        self.assertEqual(config.ssh_private_key, key)
+        self.assertEqual(
+            config.ssh_private_key,
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nbody\n-----END OPENSSH PRIVATE KEY-----\n",
+        )
 
     def test_ssh_private_key_whitespace_is_stripped(self):
         config = load_config(
@@ -255,6 +258,67 @@ class SshPrivateKeyTests(unittest.TestCase):
             {"github_repository": "owner/repo", "ssh_private_key": secret}
         )
         self.assertNotIn(secret, str(config.summary()))
+
+
+class SshPrivateKeyNormalizationTests(unittest.TestCase):
+    def _load(self, value):
+        return load_config(
+            {"github_repository": "owner/repo", "ssh_private_key": value}
+        )
+
+    def test_multiline_openssh_key_is_canonical(self):
+        key = (
+            "-----BEGIN OPENSSH PRIVATE KEY-----\n"
+            + "A" * 64
+            + "\n-----END OPENSSH PRIVATE KEY-----\n"
+        )
+        config = self._load(key)
+        self.assertEqual(config.ssh_private_key, key)
+
+    def test_folded_openssh_key_is_reconstructed(self):
+        folded = (
+            "-----BEGIN OPENSSH PRIVATE KEY----- "
+            + "A" * 64
+            + " -----END OPENSSH PRIVATE KEY-----"
+        )
+        config = self._load(folded)
+        self.assertEqual(
+            config.ssh_private_key,
+            "-----BEGIN OPENSSH PRIVATE KEY-----\n"
+            + "A" * 64
+            + "\n-----END OPENSSH PRIVATE KEY-----\n",
+        )
+
+    def test_header_and_footer_are_separated(self):
+        config = self._load(
+            "-----BEGIN OPENSSH PRIVATE KEY----- body -----END OPENSSH PRIVATE KEY-----"
+        )
+        lines = config.ssh_private_key.splitlines()
+        self.assertEqual(lines[0], "-----BEGIN OPENSSH PRIVATE KEY-----")
+        self.assertEqual(lines[-1], "-----END OPENSSH PRIVATE KEY-----")
+
+    def test_trailing_newline_is_present(self):
+        config = self._load(
+            "-----BEGIN OPENSSH PRIVATE KEY----- body -----END OPENSSH PRIVATE KEY-----"
+        )
+        self.assertTrue(config.ssh_private_key.endswith("\n"))
+
+    def test_body_is_reflowed_to_64_columns(self):
+        config = self._load(
+            "-----BEGIN OPENSSH PRIVATE KEY----- "
+            + "A" * 130
+            + " -----END OPENSSH PRIVATE KEY-----"
+        )
+        inner = config.ssh_private_key.splitlines()[1:-1]
+        self.assertEqual(inner, ["A" * 64, "A" * 64, "A" * 2])
+
+    def test_empty_key_allowed(self):
+        config = self._load("   \n\t ")
+        self.assertEqual(config.ssh_private_key, "")
+
+    def test_non_openssh_string_unchanged(self):
+        config = self._load("some-other-format-key")
+        self.assertEqual(config.ssh_private_key, "some-other-format-key")
 
 
 class LoadConfigFromPathTests(unittest.TestCase):

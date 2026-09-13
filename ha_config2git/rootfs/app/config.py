@@ -20,6 +20,15 @@ OPTIONS_PATH = Path("/data/options.json")
 
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
+_OPENSSH_KEY_HEADER = "-----BEGIN OPENSSH PRIVATE KEY-----"
+_OPENSSH_KEY_FOOTER = "-----END OPENSSH PRIVATE KEY-----"
+_OPENSSH_KEY_RE = re.compile(
+    re.escape(_OPENSSH_KEY_HEADER) + r"(?P<body>.*?)" + re.escape(_OPENSSH_KEY_FOOTER),
+    re.DOTALL,
+)
+_WHITESPACE_RE = re.compile(r"\s+")
+_BASE64_LINE_LENGTH = 64
+
 DEFAULTS: dict[str, Any] = {
     "github_repository": "",
     "github_branch": "main",
@@ -104,17 +113,40 @@ def _as_non_empty_str(value: Any, field: str) -> str:
 
 
 def _normalize_ssh_private_key(value: Any) -> str:
-    """Return the SSH private key string (may be empty).
+    """Return the SSH private key string (may be empty), canonicalized.
 
     The key is a secret: its content must never appear in summaries or error
     messages. Only the type is validated here; whether a key is required for
     operation is decided in a later integration step.
+
+    OpenSSH private keys are normalized into canonical PEM lines so that keys
+    whose line breaks were folded into spaces (as some Home Assistant UIs do)
+    still load correctly. Anything that is not an OpenSSH key is returned
+    unchanged.
     """
     if value is None:
         return ""
     if not isinstance(value, str):
         raise ConfigError("ssh_private_key must be a string")
-    return value.strip()
+    key = value.strip()
+    if not key:
+        return ""
+    return _canonicalize_openssh_key(key)
+
+
+def _canonicalize_openssh_key(key: str) -> str:
+    """Return ``key`` in canonical OpenSSH PEM form when it is one."""
+    match = _OPENSSH_KEY_RE.search(key)
+    if match is None:
+        return key
+    body = _WHITESPACE_RE.sub("", match.group("body"))
+    if not body:
+        return key
+    wrapped = "\n".join(
+        body[i : i + _BASE64_LINE_LENGTH]
+        for i in range(0, len(body), _BASE64_LINE_LENGTH)
+    )
+    return f"{_OPENSSH_KEY_HEADER}\n{wrapped}\n{_OPENSSH_KEY_FOOTER}\n"
 
 
 def _normalize_patterns(value: Any, field: str) -> tuple[str, ...]:
