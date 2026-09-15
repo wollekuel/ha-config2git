@@ -5,12 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-> **Entwicklungsstand `0.3.0-alpha.1`:** Dieser Stand existiert ausschließlich
-> auf dem Branch `develop` und dient Tests in einer
-> Home-Assistant-Testinstallation. Es handelt sich **nicht** um ein
-> offizielles `0.3.0`-Release.
+## [0.3.0]
 
 ### Added
 
@@ -21,6 +16,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Commit message templates are validated at startup (unknown placeholders and
   invalid syntax are rejected). Rendered messages are capped at 200 characters
   and the file list is truncated deterministically (`… (+M more)`).
+
+### Validation
+
+- The configurable commit messages were tested in a real Home Assistant
+  installation on the `develop` branch (published as `0.3.0-alpha.1`); the test
+  was successful.
+
+### Known limitations
+
+- `push_interval_seconds` is reserved but not yet used (no periodic push; a
+  push happens only after a commit).
+- The watcher uses polling (`os.scandir`), not inotify.
+- Only OpenSSH-format private keys are normalized; other PEM formats are
+  passed through unchanged.
+- No force push is performed; a repository with incompatible existing history
+  can fail the first push with a non-fast-forward error.
 
 ## [0.2.0]
 
