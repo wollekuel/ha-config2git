@@ -98,5 +98,22 @@ class NormalizePatternTests(unittest.TestCase):
         self.assertEqual(normalize_pattern("  *.yaml  "), "*.yaml")
 
 
+class ExcludesTests(unittest.TestCase):
+    def test_directory_pattern_excludes_dir_and_contents(self):
+        f = PathFilter(include_patterns=["**"], exclude_patterns=[".storage/**"])
+        self.assertTrue(f.excludes(".storage"))
+        self.assertTrue(f.excludes(".storage/core.config"))
+        self.assertTrue(f.excludes(".storage/deep/nested.yaml"))
+
+    def test_file_pattern_does_not_exclude_directory(self):
+        f = PathFilter(include_patterns=["**"], exclude_patterns=["secrets.yaml"])
+        self.assertFalse(f.excludes("scripts"))
+        self.assertTrue(f.excludes("secrets.yaml"))
+
+    def test_no_exclude_patterns(self):
+        f = PathFilter(include_patterns=["**"], exclude_patterns=[])
+        self.assertFalse(f.excludes("anything"))
+
+
 if __name__ == "__main__":
     unittest.main()

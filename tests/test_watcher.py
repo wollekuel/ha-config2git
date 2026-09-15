@@ -13,7 +13,7 @@ APP_DIR = Path(__file__).resolve().parents[1] / "ha_config2git" / "rootfs" / "ap
 sys.path.insert(0, str(APP_DIR))
 
 from pathfilter import PathFilter  # noqa: E402
-from watcher import Watcher, WatcherError  # noqa: E402
+from watcher import DEFAULT_POLL_INTERVAL, Watcher, WatcherError  # noqa: E402
 
 
 class Recorder:
@@ -46,6 +46,9 @@ class _SpyFilter:
         if matched:
             self.matched_paths.append(relative_path)
         return matched
+
+    def excludes(self, relative_path: str) -> bool:
+        return self.inner.excludes(relative_path)
 
 
 def _write(path: Path, content: str) -> Path:
@@ -275,6 +278,77 @@ class PathFilterUsageTests(unittest.TestCase):
             _write(source / "a.yaml", "new")
             self.assertEqual(recorder.wait_until(1, timeout=2.0), 1)
             self.assertIn("a.yaml", spy.matched_paths)
+            watcher.stop()
+
+
+class PollIntervalTests(unittest.TestCase):
+    def test_default_poll_interval_avoids_busy_polling(self):
+        self.assertGreaterEqual(DEFAULT_POLL_INTERVAL, 1.0)
+
+    def test_explicit_poll_interval_is_stored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            recorder = Recorder()
+            watcher = Watcher(
+                source, PathFilter(["*.yaml"], []), recorder, 0.1, poll_interval=0.25
+            )
+            self.assertEqual(watcher.poll_interval, 0.25)
+
+    def test_default_poll_interval_applied_when_omitted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            recorder = Recorder()
+            watcher = Watcher(source, PathFilter(["*.yaml"], []), recorder, 0.1)
+            self.assertEqual(watcher.poll_interval, DEFAULT_POLL_INTERVAL)
+
+    def test_zero_poll_interval_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            recorder = Recorder()
+            with self.assertRaises(WatcherError):
+                Watcher(source, PathFilter(["*.yaml"], []), recorder, 0.1, poll_interval=0)
+
+    def test_negative_poll_interval_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            recorder = Recorder()
+            with self.assertRaises(WatcherError):
+                Watcher(source, PathFilter(["*.yaml"], []), recorder, 0.1, poll_interval=-1)
+
+
+class SnapshotPruningTests(unittest.TestCase):
+    def test_excluded_directory_not_in_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            _write(source / "configuration.yaml", "x")
+            _write(source / ".storage" / "core.config", "x")
+            _write(source / ".storage" / "deep" / "nested.yaml", "x")
+            recorder = Recorder()
+            path_filter = PathFilter(
+                include_patterns=["**"], exclude_patterns=[".storage/**"]
+            )
+            watcher = Watcher(source, path_filter, recorder, 0.1, poll_interval=0.01)
+
+            snapshot = watcher._snapshot()
+
+            self.assertIn("configuration.yaml", snapshot)
+            self.assertNotIn(".storage/core.config", snapshot)
+            self.assertNotIn(".storage/deep/nested.yaml", snapshot)
+
+    def test_non_excluded_file_still_detected_with_excluded_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            _write(source / ".storage" / "core.config", "x")
+            recorder = Recorder()
+            path_filter = PathFilter(
+                include_patterns=["*.yaml"], exclude_patterns=[".storage/**"]
+            )
+            watcher = Watcher(source, path_filter, recorder, 0.1, poll_interval=0.01)
+            watcher.start()
+
+            _write(source / "a.yaml", "new")
+
+            self.assertEqual(recorder.wait_until(1, timeout=2.0), 1)
             watcher.stop()
 
 

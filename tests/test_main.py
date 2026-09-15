@@ -116,6 +116,23 @@ class MainTests(unittest.TestCase):
 
             self.assertEqual(orchestrator_factory.call_args.args[1], "/data/repository")
 
+    def test_poll_interval_passed_to_watcher(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, watcher_factory = self._make_app(base)
+            app._initialize()
+
+            self.assertEqual(watcher_factory.call_args.kwargs["poll_interval"], 1)
+
+    def test_configured_poll_interval_passed_to_watcher(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            options_path = _write_options(base, poll_interval=5)
+            app, _, watcher_factory = self._make_app(base, options_path=options_path)
+            app._initialize()
+
+            self.assertEqual(watcher_factory.call_args.kwargs["poll_interval"], 5)
+
     def test_component_start_error_returns_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)

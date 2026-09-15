@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Configurable `poll_interval` (seconds between two `/config` scans), default
+  `1`. Previously the watcher scanned about 10 times per second, which caused
+  noticeable idle CPU load.
+
+### Changed
+
+- The watcher now skips excluded directories (e.g. `.storage/`) during tree
+  traversal instead of scanning their entire contents.
+
 ## [0.3.0]
 
 ### Added

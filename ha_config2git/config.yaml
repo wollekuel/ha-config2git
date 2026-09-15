@@ -23,6 +23,7 @@ options:
   git_author_email: "ha-config2git@home-assistant"
   commit_message_template: "Sync Home Assistant configuration: {changed_files}"
   commit_debounce_seconds: 30
+  poll_interval: 1
   push_interval_seconds: 300
   log_level: "info"
   ssh_private_key: ""
@@ -45,6 +46,7 @@ schema:
   git_author_email: str
   commit_message_template: str
   commit_debounce_seconds: "int(1,)"
+  poll_interval: "int(1,)"
   push_interval_seconds: "int(1,)"
   log_level: "match(^(debug|info|warning|error)$)"
   ssh_private_key: password

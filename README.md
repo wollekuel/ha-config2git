@@ -150,6 +150,7 @@ Folgende Optionen sind verfügbar. Die Defaults entsprechen `config.yaml`.
 | `git_author_email` | String | `ha-config2git@home-assistant` | E-Mail, die in jedem Commit vermerkt wird. |
 | `commit_message_template` | String | `Sync Home Assistant configuration: {changed_files}` | Template für die Commit-Message (siehe [Commit-Message-Template](#commit-message-template)). |
 | `commit_debounce_seconds` | Ganzzahl | `30` | Ruhephase (Sekunden) nach der letzten Änderung, bevor ein Commit erzeugt wird. |
+| `poll_interval` | Ganzzahl | `1` | Abstand (Sekunden) zwischen zwei Scans von `/config`. Ein niedriger Wert scannt häufiger und erhöht die CPU-Last; ein höherer Wert verzögert die Erkennung von Änderungen geringfügig. |
 | `push_interval_seconds` | Ganzzahl | `300` | **Reserviert, aktuell ungenutzt.** Im Schema vorhanden und validiert, aber die App pusht derzeit nur direkt nach einem Commit. |
 | `log_level` | String | `info` | Log-Level: `debug`, `info`, `warning` oder `error`. |
 | `ssh_private_key` | String (Passwort) | `""` | Der private SSH-Schlüssel (OpenSSH-Format). Bei leerem Wert verweigert die App den Start. |
@@ -232,6 +233,10 @@ exclude_patterns:
 - **`commit_debounce_seconds`** steuert, wie schnell Änderungen nach dem
   letzten Edit committet werden. Ein größerer Wert bündelt mehr Änderungen in
   einem Commit.
+- **`poll_interval`** legt fest, wie oft der Watcher `/config` nach Änderungen
+  durchsucht (Sekunden). Ein niedriger Wert scannt häufiger und erhöht die
+  CPU-Last deutlich; ein höherer Wert spart CPU, verzögert die Erkennung von
+  Änderungen aber um bis zu diesen Wert.
 - **`push_interval_seconds`** ist aus Kompatibilitätsgründen im Schema
   vorhanden, wird aber **funktional noch nicht verwendet**: Es gibt keinen
   periodischen Push. Ein Push erfolgt nur direkt nach einem erfolgreichen
@@ -387,6 +392,7 @@ git_author_name: ha-config2git
 git_author_email: ha-config2git@home-assistant
 commit_message_template: "Sync Home Assistant configuration: {changed_files}"
 commit_debounce_seconds: 30
+poll_interval: 1
 push_interval_seconds: 300
 log_level: info
 ssh_private_key: |

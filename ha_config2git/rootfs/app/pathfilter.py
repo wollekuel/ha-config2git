@@ -97,3 +97,13 @@ class PathFilter:
                 return True
 
         return False
+
+    def excludes(self, relative_path: str) -> bool:
+        """Return True if the path or one of its ancestors matches an exclude pattern."""
+        path = _normalize_path(relative_path)
+        if not path:
+            return False
+        for pattern in self._exclude:
+            if _pattern_matches_path(pattern, path):
+                return True
+        return False

@@ -130,6 +130,7 @@ class App:
             path_filter,
             self._on_change,
             self._config.commit_debounce_seconds,
+            poll_interval=self._config.poll_interval,
         )
 
     def _on_change(self) -> None:

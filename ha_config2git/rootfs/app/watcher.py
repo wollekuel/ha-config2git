@@ -24,6 +24,9 @@ class WatcherError(RuntimeError):
     """Raised when the watcher is misconfigured or cannot start."""
 
 
+DEFAULT_POLL_INTERVAL = 1.0
+
+
 class Watcher:
     """Recursively watch ``source_dir`` and debounce relevant file changes.
 
@@ -58,7 +61,7 @@ class Watcher:
         self._debounce = debounce
 
         if poll_interval is None:
-            poll_interval = 0.1
+            poll_interval = DEFAULT_POLL_INTERVAL
         try:
             poll_interval = float(poll_interval)
         except (TypeError, ValueError) as exc:
@@ -73,6 +76,11 @@ class Watcher:
         self._lock = threading.Lock()
         self._last_relevant = 0.0
         self._pending = False
+
+    @property
+    def poll_interval(self) -> float:
+        """Return the configured polling interval in seconds."""
+        return self._poll_interval
 
     # -- lifecycle ------------------------------------------------------
 
@@ -131,7 +139,11 @@ class Watcher:
                     self._callback()
 
     def _snapshot(self) -> dict[str, tuple[int, int]]:
-        """Map relative POSIX paths to ``(mtime_ns, size)`` signatures."""
+        """Map relative POSIX paths to ``(mtime_ns, size)`` signatures.
+
+        Excluded directories are pruned during traversal so their contents are
+        never scanned. Symlinks are never followed.
+        """
         result: dict[str, tuple[int, int]] = {}
         stack = [self._source]
         while stack:
@@ -141,10 +153,11 @@ class Watcher:
                     for entry in entries:
                         if entry.is_symlink():
                             continue
+                        rel = Path(entry.path).relative_to(self._source).as_posix()
                         if entry.is_dir(follow_symlinks=False):
-                            stack.append(entry.path)
+                            if not self._filter.excludes(rel):
+                                stack.append(entry.path)
                         elif entry.is_file(follow_symlinks=False):
-                            rel = Path(entry.path).relative_to(self._source).as_posix()
                             stat = entry.stat(follow_symlinks=False)
                             result[rel] = (stat.st_mtime_ns, stat.st_size)
             except OSError:

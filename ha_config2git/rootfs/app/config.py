@@ -37,6 +37,7 @@ DEFAULTS: dict[str, Any] = {
     "git_author_email": "ha-config2git@home-assistant",
     "commit_message_template": "Sync Home Assistant configuration: {changed_files}",
     "commit_debounce_seconds": 30,
+    "poll_interval": 1,
     "push_interval_seconds": 300,
     "log_level": "info",
     "ssh_private_key": "",
@@ -71,6 +72,7 @@ class Config:
     git_author_email: str
     commit_message_template: str
     commit_debounce_seconds: int
+    poll_interval: int
     push_interval_seconds: int
     log_level: str
     ssh_private_key: str
@@ -88,6 +90,7 @@ class Config:
             "git_author_email": self.git_author_email,
             "commit_message_template": self.commit_message_template,
             "commit_debounce_seconds": self.commit_debounce_seconds,
+            "poll_interval": self.poll_interval,
             "push_interval_seconds": self.push_interval_seconds,
             "log_level": self.log_level,
             "include_patterns": list(self.include_patterns),
@@ -114,6 +117,15 @@ def _as_non_empty_str(value: Any, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"{field} must be a non-empty string")
     return value.strip()
+
+
+def _normalize_poll_interval(value: Any) -> int:
+    """Return a positive integer polling interval in seconds."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigError("poll_interval must be an integer number of seconds")
+    if value <= 0:
+        raise ConfigError("poll_interval must be > 0")
+    return value
 
 
 def _normalize_commit_message_template(value: Any) -> str:
@@ -215,6 +227,7 @@ def load_config(options: Mapping[str, Any]) -> Config:
             merged.get("commit_message_template")
         ),
         commit_debounce_seconds=merged["commit_debounce_seconds"],
+        poll_interval=_normalize_poll_interval(merged.get("poll_interval")),
         push_interval_seconds=merged["push_interval_seconds"],
         log_level=merged["log_level"],
         ssh_private_key=_normalize_ssh_private_key(merged.get("ssh_private_key")),

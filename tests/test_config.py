@@ -205,6 +205,7 @@ class DefaultsAndSummaryTests(unittest.TestCase):
         self.assertEqual(config.git_author_name, "ha-config2git")
         self.assertEqual(config.git_author_email, "ha-config2git@home-assistant")
         self.assertEqual(config.commit_debounce_seconds, 30)
+        self.assertEqual(config.poll_interval, 1)
         self.assertEqual(config.push_interval_seconds, 300)
         self.assertEqual(config.log_level, "info")
 
@@ -219,6 +220,36 @@ class DefaultsAndSummaryTests(unittest.TestCase):
         config = load_config({"github_repository": "owner/repo"})
         with self.assertRaises(AttributeError):
             config.github_branch = "other"
+
+
+class PollIntervalTests(unittest.TestCase):
+    def test_default_is_one_second(self):
+        config = load_config({"github_repository": "owner/repo"})
+        self.assertEqual(config.poll_interval, 1)
+
+    def test_custom_value_is_loaded(self):
+        config = load_config({"github_repository": "owner/repo", "poll_interval": 5})
+        self.assertEqual(config.poll_interval, 5)
+
+    def test_zero_is_rejected(self):
+        with self.assertRaises(ConfigError):
+            load_config({"github_repository": "owner/repo", "poll_interval": 0})
+
+    def test_negative_is_rejected(self):
+        with self.assertRaises(ConfigError):
+            load_config({"github_repository": "owner/repo", "poll_interval": -1})
+
+    def test_float_is_rejected(self):
+        with self.assertRaises(ConfigError):
+            load_config({"github_repository": "owner/repo", "poll_interval": 1.5})
+
+    def test_non_number_is_rejected(self):
+        with self.assertRaises(ConfigError):
+            load_config({"github_repository": "owner/repo", "poll_interval": "1"})
+
+    def test_boolean_is_rejected(self):
+        with self.assertRaises(ConfigError):
+            load_config({"github_repository": "owner/repo", "poll_interval": True})
 
 
 class CommitMessageTemplateTests(unittest.TestCase):
