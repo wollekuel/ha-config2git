@@ -478,6 +478,17 @@ in der Form `MAJOR.MINOR.PATCH`.
     Konfigurationsmöglichkeiten.
 - **1.0.0** markiert den ersten stabilen Release; danach kennzeichnen
   `MAJOR`-Versionen inkompatible Änderungen.
+- **Pre-Release-/Entwicklungsstände** existieren nur auf dem Branch `develop`
+  und tragen ein SemVer-Prerelease-Suffix:
+  - `X.Y.Z-alpha.N` — aktive Entwicklung / erster testbarer Stand.
+  - `X.Y.Z-beta.N` — Funktionsumfang vollständig implementiert und praktisch
+    getestet.
+  - `X.Y.Z-rc.N` — Release Candidate (finaler Test vor dem Release).
+  - `X.Y.Z` — finales, offizielles Release.
+
+  Diese Pre-Release-Stände sind ausdrücklich **keine** offiziellen Releases und
+  werden weder gemergt noch getaggt; sie dienen nur Tests (z. B. in einer
+  Home-Assistant-Testinstallation).
 
 Jede veröffentlichte Version erhält einen Git-Tag im Format `vX.Y.Z`
 (z. B. `v0.2.0`) und wird im `CHANGELOG.md` dokumentiert. Jeder Release ist

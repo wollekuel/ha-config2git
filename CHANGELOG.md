@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> **Entwicklungsstand `0.3.0-alpha.1`:** Dieser Stand existiert ausschließlich
+> auf dem Branch `develop` und dient Tests in einer
+> Home-Assistant-Testinstallation. Es handelt sich **nicht** um ein
+> offizielles `0.3.0`-Release.
+
 ### Added
 
 - Configurable commit messages via `commit_message_template` with placeholders
