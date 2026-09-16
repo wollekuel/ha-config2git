@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**Hinweis:** Dieser Abschnitt entspricht dem Pre-Release `0.3.1-alpha.1`
+**Hinweis:** Dieser Abschnitt entspricht dem Pre-Release `0.3.2-alpha.1`
 (Branch `develop`) und enthält den CPU-/Watcher-Fix (Issue #1). Er dient
 ausschließlich dem Praxistest in Home Assistant und ist **kein** offizielles
 Release.
