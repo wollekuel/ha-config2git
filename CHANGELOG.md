@@ -5,12 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-**Hinweis:** Dieser Abschnitt entspricht dem Pre-Release `0.3.2-alpha.1`
-(Branch `develop`) und enthält den CPU-/Watcher-Fix (Issue #1). Er dient
-ausschließlich dem Praxistest in Home Assistant und ist **kein** offizielles
-Release.
+## [0.3.2]
 
 ### Added
 
@@ -22,6 +17,8 @@ Release.
 
 - The watcher now skips excluded directories (e.g. `.storage/`) during tree
   traversal instead of scanning their entire contents.
+- The watcher now prunes directories that cannot contain any included file
+  during snapshot traversal instead of scanning their entire contents.
 
 ## [0.3.0]
 
