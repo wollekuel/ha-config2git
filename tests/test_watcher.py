@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 APP_DIR = Path(__file__).resolve().parents[1] / "ha_config2git" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
@@ -49,6 +51,9 @@ class _SpyFilter:
 
     def excludes(self, relative_path: str) -> bool:
         return self.inner.excludes(relative_path)
+
+    def may_contain_included(self, relative_dir: str) -> bool:
+        return self.inner.may_contain_included(relative_dir)
 
 
 def _write(path: Path, content: str) -> Path:
@@ -350,6 +355,101 @@ class SnapshotPruningTests(unittest.TestCase):
 
             self.assertEqual(recorder.wait_until(1, timeout=2.0), 1)
             watcher.stop()
+
+    def test_non_included_directory_pruned_from_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            _write(source / "configuration.yaml", "x")
+            _write(source / "deps" / "some" / "module.py", "x")
+            recorder = Recorder()
+            path_filter = PathFilter(include_patterns=["*.yaml"], exclude_patterns=[])
+            watcher = Watcher(source, path_filter, recorder, 0.1, poll_interval=0.01)
+
+            snapshot = watcher._snapshot()
+
+            self.assertIn("configuration.yaml", snapshot)
+            self.assertNotIn("deps/some/module.py", snapshot)
+
+    def test_included_subtree_still_captured(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            _write(source / "custom_components" / "foo" / "__init__.py", "x")
+            _write(source / "custom_components" / "foo" / "sub" / "bar.py", "x")
+            recorder = Recorder()
+            path_filter = PathFilter(
+                include_patterns=["*.yaml", "custom_components/**"], exclude_patterns=[]
+            )
+            watcher = Watcher(source, path_filter, recorder, 0.1, poll_interval=0.01)
+
+            snapshot = watcher._snapshot()
+
+            self.assertIn("custom_components/foo/__init__.py", snapshot)
+            self.assertIn("custom_components/foo/sub/bar.py", snapshot)
+
+    def test_pruning_does_not_break_detection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            _write(source / "deps" / "some" / "module.py", "x")
+            recorder = Recorder()
+            path_filter = PathFilter(include_patterns=["*.yaml"], exclude_patterns=[])
+            watcher = Watcher(source, path_filter, recorder, 0.1, poll_interval=0.01)
+            watcher.start()
+
+            # A change inside a pruned subtree must not trigger a callback.
+            _write(source / "deps" / "some" / "module.py", "y")
+            self.assertEqual(recorder.wait_until(1, timeout=0.4), 0)
+
+            # A relevant root file must still trigger a callback.
+            _write(source / "a.yaml", "data")
+            self.assertEqual(recorder.wait_until(1, timeout=2.0), 1)
+            watcher.stop()
+
+    def test_exclude_still_wins_with_broad_include(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            _write(source / ".storage" / "core.config", "x")
+            _write(source / "deps" / "x.txt", "x")
+            recorder = Recorder()
+            path_filter = PathFilter(include_patterns=["**"], exclude_patterns=[".storage/**"])
+            watcher = Watcher(source, path_filter, recorder, 0.1, poll_interval=0.01)
+
+            snapshot = watcher._snapshot()
+
+            self.assertNotIn(".storage/core.config", snapshot)
+            self.assertIn("deps/x.txt", snapshot)
+
+    def test_irrelevant_directories_not_traversed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            _write(source / "configuration.yaml", "x")
+            _write(source / "deps" / "a" / "module.py", "x")
+            _write(source / "tts" / "b" / "voice.wav", "x")
+            _write(source / "custom_components" / "foo" / "__init__.py", "x")
+            recorder = Recorder()
+            path_filter = PathFilter(
+                include_patterns=["*.yaml", "custom_components/**"], exclude_patterns=[]
+            )
+            watcher = Watcher(source, path_filter, recorder, 0.1, poll_interval=0.01)
+
+            real_scandir = os.scandir
+            scanned: list[str] = []
+
+            def counting_scandir(path):
+                scanned.append(str(path))
+                return real_scandir(path)
+
+            with mock.patch.object(os, "scandir", side_effect=counting_scandir):
+                snapshot = watcher._snapshot()
+
+            self.assertIn("configuration.yaml", snapshot)
+            self.assertIn("custom_components/foo/__init__.py", snapshot)
+            self.assertNotIn("deps/a/module.py", snapshot)
+            self.assertNotIn("tts/b/voice.wav", snapshot)
+
+            scanned_names = [Path(p).name for p in scanned]
+            self.assertIn("custom_components", scanned_names)
+            self.assertNotIn("deps", scanned_names)
+            self.assertNotIn("tts", scanned_names)
 
 
 if __name__ == "__main__":

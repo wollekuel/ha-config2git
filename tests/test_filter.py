@@ -115,5 +115,94 @@ class ExcludesTests(unittest.TestCase):
         self.assertFalse(f.excludes("anything"))
 
 
+class MayContainIncludedTests(unittest.TestCase):
+    def test_root_may_contain_included(self):
+        f = PathFilter(include_patterns=["*.yaml"])
+        self.assertTrue(f.may_contain_included(""))
+
+    def test_single_segment_pattern_does_not_cover_subdir(self):
+        f = PathFilter(include_patterns=["*.yaml"])
+        self.assertFalse(f.may_contain_included("deps"))
+
+    def test_double_star_pattern_covers_its_dir(self):
+        f = PathFilter(include_patterns=["custom_components/**"])
+        self.assertTrue(f.may_contain_included("custom_components"))
+        self.assertTrue(f.may_contain_included("custom_components/foo"))
+        self.assertFalse(f.may_contain_included("deps"))
+
+    def test_bare_directory_pattern(self):
+        f = PathFilter(include_patterns=["scripts"])
+        self.assertTrue(f.may_contain_included("scripts"))
+        self.assertFalse(f.may_contain_included("script2"))
+
+    def test_deeply_anchored_pattern(self):
+        f = PathFilter(include_patterns=["automations/*.yaml"])
+        self.assertTrue(f.may_contain_included("automations"))
+        self.assertFalse(f.may_contain_included("automations/sub"))
+
+    def test_glob_star_keeps_matching_dir(self):
+        f = PathFilter(include_patterns=["*"])
+        self.assertTrue(f.may_contain_included("deps"))
+
+    def test_double_star_keeps_everything(self):
+        f = PathFilter(include_patterns=["**"])
+        self.assertTrue(f.may_contain_included("anything/deep/nested"))
+
+    def test_directory_named_like_file_pattern(self):
+        f = PathFilter(include_patterns=["*.yaml"])
+        self.assertTrue(f.may_contain_included("foo.yaml"))
+
+    def test_no_include_patterns_prunes_everything(self):
+        f = PathFilter(include_patterns=[])
+        self.assertFalse(f.may_contain_included("deps"))
+        self.assertFalse(f.may_contain_included(""))
+
+    def test_consistency_with_matches(self):
+        include = [
+            "*.yaml",
+            "*.yml",
+            "*.json",
+            "custom_components/**",
+            "blueprints/**",
+            "esphome/**",
+        ]
+        exclude = ["secrets.yaml", "*.db", "*.db-*", ".storage/**"]
+        f = PathFilter(include_patterns=include, exclude_patterns=exclude)
+
+        directories = [
+            "",
+            "custom_components",
+            "custom_components/foo",
+            "blueprints",
+            "esphome",
+            "deps",
+            "tts",
+            "www",
+            "scripts",
+        ]
+        candidates = [
+            "configuration.yaml",
+            "automations.json",
+            "secrets.yaml",
+            "home-assistant_v2.db",
+            "custom_components/foo/__init__.py",
+            "custom_components/foo/sub/bar.py",
+            "blueprints/a/b.yaml",
+            "esphome/c/d.yaml",
+            "deps/module.py",
+            "tts/voice.wav",
+            "www/index.html",
+            "scripts/run.sh",
+        ]
+        for directory in directories:
+            for candidate in candidates:
+                rel = f"{directory}/{candidate}" if directory else candidate
+                if f.matches(rel):
+                    self.assertTrue(
+                        f.may_contain_included(directory),
+                        f"matches({rel!r}) but may_contain_included({directory!r}) is False",
+                    )
+
+
 if __name__ == "__main__":
     unittest.main()

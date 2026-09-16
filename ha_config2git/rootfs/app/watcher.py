@@ -142,21 +142,25 @@ class Watcher:
         """Map relative POSIX paths to ``(mtime_ns, size)`` signatures.
 
         Excluded directories are pruned during traversal so their contents are
-        never scanned. Symlinks are never followed.
+        never scanned. Directories that cannot contain any included file are
+        pruned as well. Symlinks are never followed.
         """
         result: dict[str, tuple[int, int]] = {}
-        stack = [self._source]
+        stack: list[tuple[str, str]] = [(str(self._source), "")]
         while stack:
-            directory = stack.pop()
+            directory, rel_dir = stack.pop()
             try:
                 with os.scandir(directory) as entries:
                     for entry in entries:
                         if entry.is_symlink():
                             continue
-                        rel = Path(entry.path).relative_to(self._source).as_posix()
+                        rel = entry.name if rel_dir == "" else f"{rel_dir}/{entry.name}"
                         if entry.is_dir(follow_symlinks=False):
-                            if not self._filter.excludes(rel):
-                                stack.append(entry.path)
+                            if self._filter.excludes(rel):
+                                continue
+                            if not self._filter.may_contain_included(rel):
+                                continue
+                            stack.append((entry.path, rel))
                         elif entry.is_file(follow_symlinks=False):
                             stat = entry.stat(follow_symlinks=False)
                             result[rel] = (stat.st_mtime_ns, stat.st_size)

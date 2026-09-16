@@ -42,6 +42,27 @@ def _match_segments(pattern: list[str], path: list[str]) -> bool:
     return False
 
 
+def _match_segments_may_extend(pattern: list[str], path: list[str]) -> bool:
+    """Return True if some (possibly empty) extension of ``path`` matches ``pattern``.
+
+    Unlike :func:`_match_segments`, this allows appending extra path segments, so
+    it answers "could this pattern match a descendant of ``path``?".
+    """
+    if not pattern:
+        return not path
+    if pattern[0] == "**":
+        for index in range(len(path) + 1):
+            if _match_segments_may_extend(pattern[1:], path[index:]):
+                return True
+        return False
+    if not path:
+        # We may append a segment matching pattern[0], then match the rest.
+        return _match_segments_may_extend(pattern[1:], [])
+    if fnmatch.fnmatchcase(path[0], pattern[0]):
+        return _match_segments_may_extend(pattern[1:], path[1:])
+    return False
+
+
 def _pattern_matches_path(pattern: str, path: str) -> bool:
     """Return True if a pattern matches a path or one of its ancestors."""
     pattern_segments = pattern.split("/") if pattern else []
@@ -105,5 +126,23 @@ class PathFilter:
             return False
         for pattern in self._exclude:
             if _pattern_matches_path(pattern, path):
+                return True
+        return False
+
+    def may_contain_included(self, relative_dir: str) -> bool:
+        """Return True if some path at or below ``relative_dir`` could be included.
+
+        This is a traversal hint only and never changes the ``matches()`` result.
+        It is conservative: ``True`` means an include pattern might match a
+        descendant (so the directory should be traversed), while ``False`` is a
+        hard guarantee that no include pattern can match anything beneath it (so
+        the traversal may safely prune the directory).
+        """
+        path = _normalize_path(relative_dir)
+        path_segments = path.split("/") if path else []
+        for pattern in self._include:
+            if _pattern_matches_path(pattern, path):
+                return True
+            if _match_segments_may_extend(pattern.split("/") if pattern else [], path_segments):
                 return True
         return False
