@@ -1,6 +1,6 @@
 # https://developers.home-assistant.io/docs/apps/configuration#app-configuration
 name: ha-config2git
-version: "0.3.2"
+version: "0.3.3-alpha.1"
 slug: ha_config2git
 description: >-
   Watches the Home Assistant configuration, versions changes with Git and
@@ -39,6 +39,7 @@ options:
     - "*.db"
     - "*.db-*"
     - ".storage/**"
+    - "**/.git/**"
 schema:
   github_repository: str
   github_branch: str

@@ -9,7 +9,11 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parents[1] / "ha_config2git" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from pathfilter import PathFilter, normalize_pattern  # noqa: E402
+from pathfilter import (  # noqa: E402
+    RESERVED_EXCLUDE_PATTERNS,
+    PathFilter,
+    normalize_pattern,
+)
 
 
 class SimpleStarTests(unittest.TestCase):
@@ -113,6 +117,102 @@ class ExcludesTests(unittest.TestCase):
     def test_no_exclude_patterns(self):
         f = PathFilter(include_patterns=["**"], exclude_patterns=[])
         self.assertFalse(f.excludes("anything"))
+
+
+class ReservedGitMetadataTests(unittest.TestCase):
+    """``.git`` is reserved: Git metadata can never be synchronized."""
+
+    DEFAULT_INCLUDE = [
+        "*.yaml",
+        "*.yml",
+        "*.json",
+        "custom_components/**",
+        "blueprints/**",
+        "esphome/**",
+    ]
+    DEFAULT_EXCLUDE = ["secrets.yaml", "*.db", "*.db-*", ".storage/**"]
+
+    def _default_filter(self) -> PathFilter:
+        return PathFilter(
+            include_patterns=self.DEFAULT_INCLUDE,
+            exclude_patterns=self.DEFAULT_EXCLUDE,
+        )
+
+    def test_nested_git_directory_is_excluded(self):
+        f = PathFilter(include_patterns=["esphome/**"])
+        self.assertFalse(f.matches("esphome/.git/index"))
+        self.assertFalse(f.matches("esphome/.git/HEAD"))
+        self.assertFalse(f.matches("esphome/.git/config"))
+        self.assertFalse(f.matches("esphome/.git/objects/ab/cdef"))
+        self.assertFalse(f.matches("esphome/.git/refs/heads/main"))
+
+    def test_git_directory_at_root_is_excluded(self):
+        f = PathFilter(include_patterns=["**"])
+        self.assertFalse(f.matches(".git/config"))
+        self.assertFalse(f.matches(".git/HEAD"))
+
+    def test_git_directory_at_multiple_levels_is_excluded(self):
+        f = PathFilter(include_patterns=["**"])
+        self.assertFalse(f.matches("custom_components/x/.git/config"))
+        self.assertFalse(f.matches("blueprints/.git/HEAD"))
+        self.assertFalse(f.matches("a/b/c/.git/objects/ab/cdef"))
+
+    def test_git_file_is_excluded(self):
+        # Git worktrees and submodules use a ``.git`` file, not a directory.
+        f = PathFilter(include_patterns=["**"])
+        self.assertFalse(f.matches("esphome/.git"))
+        self.assertFalse(f.matches(".git"))
+
+    def test_git_metadata_excluded_with_default_patterns(self):
+        f = self._default_filter()
+        self.assertFalse(f.matches("esphome/.git/index"))
+        self.assertFalse(f.matches("esphome/.git/HEAD"))
+        self.assertFalse(f.matches("esphome/.git/config"))
+        self.assertFalse(f.matches("esphome/.git/objects/ab/cdef"))
+        self.assertFalse(f.matches("custom_components/foo/.git/config"))
+
+    def test_normal_files_remain_included(self):
+        f = self._default_filter()
+        self.assertTrue(f.matches("esphome/demo.yaml"))
+        self.assertTrue(f.matches("configuration.yaml"))
+        self.assertTrue(f.matches("automations.json"))
+        self.assertTrue(f.matches("custom_components/foo/__init__.py"))
+        self.assertTrue(f.matches("blueprints/a/b.yaml"))
+
+    def test_gitignore_remains_included(self):
+        # ``.gitignore`` is a normal file, not Git metadata.
+        self.assertTrue(self._default_filter().matches("esphome/.gitignore"))
+        self.assertTrue(PathFilter(include_patterns=["**"]).matches(".gitignore"))
+
+    def test_empty_exclude_list_cannot_override_reserved_rule(self):
+        f = PathFilter(include_patterns=["**"], exclude_patterns=[])
+        self.assertFalse(f.matches("esphome/.git/index"))
+        self.assertFalse(f.matches(".git/config"))
+
+    def test_explicit_include_cannot_override_reserved_rule(self):
+        broad = PathFilter(include_patterns=["**"])
+        self.assertFalse(broad.matches("esphome/.git/index"))
+
+        explicit = PathFilter(include_patterns=["esphome/.git/**"])
+        self.assertFalse(explicit.matches("esphome/.git/config"))
+
+    def test_excludes_reports_git_directories_for_pruning(self):
+        f = self._default_filter()
+        self.assertTrue(f.excludes("esphome/.git"))
+        self.assertTrue(f.excludes("esphome/.git/objects"))
+        self.assertTrue(f.excludes(".git"))
+        self.assertFalse(f.excludes("esphome"))
+
+    def test_reserved_patterns_are_exposed_separately(self):
+        f = PathFilter(include_patterns=["*.yaml"], exclude_patterns=["secrets.yaml"])
+        self.assertEqual(f.exclude_patterns, ("secrets.yaml",))
+        self.assertEqual(f.reserved_exclude_patterns, RESERVED_EXCLUDE_PATTERNS)
+
+    def test_user_exclude_precedence_unchanged(self):
+        f = PathFilter(include_patterns=["**"], exclude_patterns=["secrets.yaml"])
+        self.assertFalse(f.matches("secrets.yaml"))
+        self.assertTrue(f.matches("configuration.yaml"))
+        self.assertTrue(f.matches("secrets.sample.yaml"))
 
 
 class MayContainIncludedTests(unittest.TestCase):

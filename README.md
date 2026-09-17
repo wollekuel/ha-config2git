@@ -216,7 +216,13 @@ exclude_patterns:
   - "*.db"
   - "*.db-*"
   - ".storage/**"
+  - "**/.git/**"
 ```
+
+Der Eintrag `**/.git/**` ist zusätzlich **reserviert**: `.git` wird von der App
+immer ausgeschlossen, unabhängig von `include_patterns` und
+`exclude_patterns`. Siehe
+[Reservierter Ausschluss: `.git`](#reservierter-ausschluss-git).
 
 ### Hinweise zu einzelnen Optionen
 
@@ -266,6 +272,42 @@ Beispiele (mit den Defaults):
 | `*.db` | Schließt Datenbankdateien aus. |
 | `*.db-*` | Schließt Datenbank-Backups/Rollover-Dateien aus. |
 | `.storage/**` | Schließt das interne `.storage`-Verzeichnis aus. |
+| `**/.git/**` | Schließt Git-Metadaten (`.git`) auf jeder Ebene aus. Reserviert und nicht konfigurierbar (siehe unten). |
+
+### Reservierter Ausschluss: `.git`
+
+`.git` ist ein **reservierter Pfad** und kann grundsätzlich nicht synchronisiert
+werden:
+
+- `.git`-Verzeichnisse und `.git`-Dateien (z. B. die `gitdir:`-Datei eines Git
+  Worktrees oder Submoduls) werden **auf jeder Ebene rekursiv** ausgeschlossen,
+  also z. B. `esphome/.git/index`, `custom_components/x/.git/config`,
+  `blueprints/.git/HEAD` und `.git/HEAD`.
+- Die Regel ist **nicht konfigurierbar**. Sie greift auch bei
+  `exclude_patterns: []` und lässt sich nicht über einen Include wie `**` oder
+  `esphome/.git/**` aktivieren. Da Excludes grundsätzlich Vorrang vor Includes
+  haben, wird die reservierte Regel intern zusätzlich zu den konfigurierten
+  `exclude_patterns` angewendet.
+- Dadurch gelangen Git-Metadaten **verschachtelter** Repositories (z. B. eines
+  Repositories in `/config/esphome`) nicht in das Backup — weder als Dateien
+  noch als Gitlink-/Submodul-Verweis im GitHub-Repository.
+- Dadurch kann ein sehr breites Include wie `**` auch die `.git`-Metadaten des
+  lokalen Backup-Repositories unter `/data/repository` nicht überschreiben oder
+  löschen.
+- Der Watcher verwirft `.git`-Verzeichnisse bereits vor der
+  Include-basierten Traversierung; sie werden daher gar nicht erst durchlaufen,
+  was zusätzlich CPU spart.
+
+Der Eintrag `**/.git/**` in den sichtbaren Default-`exclude_patterns` dient der
+Transparenz und Dokumentation. Der tatsächliche Schutz ist die reservierte Regel
+im `PathFilter` und gilt daher auch für bereits gespeicherte Optionen und für
+eigene Pattern-Listen.
+
+> **Hinweis zum Upgrade:** Diese Änderung verhindert ab sofort, dass
+> `.git`-Metadaten synchronisiert werden. Bereits früher synchronisierte
+> `.git`-Metadaten im lokalen Repository unter `/data/repository` (und damit
+> auch im GitHub-Repository) werden **nicht automatisch** entfernt oder
+> repariert.
 
 ## Was passiert bei einer Änderung?
 
@@ -411,6 +453,7 @@ exclude_patterns:
   - "*.db"
   - "*.db-*"
   - ".storage/**"
+  - "**/.git/**"
 ```
 
 Ersetze `myuser/my-homeassistant-config` und den Platzhalter für den privaten
@@ -507,6 +550,8 @@ wird zentral in `ha_config2git/config.yaml` gepflegt; die detaillierten
 Aktuell implementiert:
 
 - Überwachung von `/config`, Include-/Exclude-Filterung, Debouncing.
+- Reservierter Ausschluss von Git-Metadaten (`.git`) auf jeder Ebene — siehe
+  [Reservierter Ausschluss: `.git`](#reservierter-ausschluss-git).
 - Lokaler Git-Commit und Push zu GitHub per SSH über einen Deploy Key.
 
 Noch nicht implementiert:
@@ -518,3 +563,7 @@ Noch nicht implementiert:
 - Home-Assistant-API-Integration.
 - Periodischer Push (`push_interval_seconds` ist reserviert, aber ungenutzt).
 - Inotify-basierte Überwachung (der Watcher verwendet derzeit Polling).
+- Automatische Bereinigung/Reparatur bereits synchronisierter `.git`-Metadaten im
+  lokalen Backup-Repository bzw. auf GitHub. Ab dieser Version werden
+  `.git`-Metadaten nicht mehr synchronisiert, bereits vorhandene werden aber
+  nicht automatisch entfernt.

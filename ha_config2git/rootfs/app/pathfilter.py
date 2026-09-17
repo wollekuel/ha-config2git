@@ -1,9 +1,19 @@
-"""Central include/exclude path filter shared by watcher.py and sync.py."""
+"""Central include/exclude path filter shared by watcher.py and sync.py.
+
+Git metadata is reserved: ``.git`` directories and ``.git`` files are excluded
+unconditionally at every depth and can never be enabled through the include or
+exclude configuration.
+"""
 
 from __future__ import annotations
 
 import fnmatch
 from collections.abc import Iterable
+
+# Git metadata is reserved: it must never become part of the backup, no matter
+# how the include/exclude configuration looks. The rule is applied internally
+# by PathFilter, so it cannot be disabled by saved user options either.
+RESERVED_EXCLUDE_PATTERNS = ("**/.git/**",)
 
 
 def normalize_pattern(pattern: str) -> str:
@@ -85,6 +95,11 @@ class PathFilter:
     ``exclude_patterns`` always win over ``include_patterns``. ``*`` matches
     within a single path segment, ``**`` matches zero or more whole segments.
     A pattern that matches a directory also matches everything beneath it.
+
+    Git metadata is reserved: the patterns in :data:`RESERVED_EXCLUDE_PATTERNS`
+    (``.git`` directories and files at any depth) are always excluded, no matter
+    how the include and exclude patterns are configured. See
+    :attr:`reserved_exclude_patterns`.
     """
 
     def __init__(
@@ -94,6 +109,14 @@ class PathFilter:
     ) -> None:
         self._include = tuple(normalize_pattern(p) for p in include_patterns)
         self._exclude = tuple(normalize_pattern(p) for p in exclude_patterns)
+        # Reserved patterns stay separate from the user configuration so that
+        # the public ``exclude_patterns`` API is unchanged. They are applied
+        # together with the user patterns; because excludes always win over
+        # includes, they can never be re-enabled by configuration.
+        self._reserved_exclude = tuple(
+            normalize_pattern(p) for p in RESERVED_EXCLUDE_PATTERNS
+        )
+        self._effective_exclude = self._exclude + self._reserved_exclude
 
     @property
     def include_patterns(self) -> tuple[str, ...]:
@@ -101,7 +124,13 @@ class PathFilter:
 
     @property
     def exclude_patterns(self) -> tuple[str, ...]:
+        """Return the exclude patterns configured by the user."""
         return self._exclude
+
+    @property
+    def reserved_exclude_patterns(self) -> tuple[str, ...]:
+        """Return the reserved exclusions that are always applied."""
+        return self._reserved_exclude
 
     def matches(self, relative_path: str) -> bool:
         """Return True if the path should be included (and is not excluded)."""
@@ -109,7 +138,7 @@ class PathFilter:
         if not path:
             return False
 
-        for pattern in self._exclude:
+        for pattern in self._effective_exclude:
             if _pattern_matches_path(pattern, path):
                 return False
 
@@ -120,11 +149,16 @@ class PathFilter:
         return False
 
     def excludes(self, relative_path: str) -> bool:
-        """Return True if the path or one of its ancestors matches an exclude pattern."""
+        """Return True if the path or one of its ancestors matches an exclude pattern.
+
+        Reserved exclusions (Git metadata) count as well, so this returns True
+        for ``.git`` directories, which lets the watcher prune them before it
+        considers include-based traversal.
+        """
         path = _normalize_path(relative_path)
         if not path:
             return False
-        for pattern in self._exclude:
+        for pattern in self._effective_exclude:
             if _pattern_matches_path(pattern, path):
                 return True
         return False

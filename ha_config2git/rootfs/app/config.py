@@ -54,6 +54,7 @@ DEFAULTS: dict[str, Any] = {
         "*.db",
         "*.db-*",
         ".storage/**",
+        "**/.git/**",
     ],
 }
 

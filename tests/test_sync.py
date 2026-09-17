@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -39,6 +40,38 @@ def _snapshot(root: Path) -> dict[str, tuple[bytes, int]]:
         for p in root.rglob("*")
         if p.is_file() and not p.is_symlink()
     }
+
+
+def _run_git(repo: Path, *args: str) -> None:
+    """Run a git command inside ``repo`` (fixture helper)."""
+    subprocess.run(
+        ["git", *args],
+        cwd=str(repo),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _make_nested_repository(path: Path) -> None:
+    """Create a real Git repository with one commit below ``path``.
+
+    The repository is expected to contain files already; they are staged so
+    that the resulting ``.git`` directory has an index and a resolvable HEAD.
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    _run_git(path, "init", "-q", ".")
+    _run_git(path, "add", "-A")
+    _run_git(
+        path,
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "-qm",
+        "initial",
+    )
 
 
 class SyncTestCase(unittest.TestCase):
@@ -403,6 +436,60 @@ class SymlinkTests(SyncTestCase):
             self.assertEqual(result.copied, ["real.yaml"])
             self.assertFalse((repo / "link.yaml").exists())
             self.assertEqual(_read(repo / "real.yaml"), "data")
+
+
+class GitMetadataTests(SyncTestCase):
+    def test_nested_git_repository_is_not_synchronized(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "configuration.yaml", "root")
+            _write(source / "esphome" / "demo.yaml", "esphome")
+            _make_nested_repository(source / "esphome")
+
+            # The nested repository really contains Git metadata.
+            nested_metadata = _rel_files(source / "esphome" / ".git")
+            self.assertIn("index", nested_metadata)
+            self.assertIn("HEAD", nested_metadata)
+
+            result = self._sync(source, repo, ["*.yaml", "esphome/**"]).sync()
+
+            self.assertEqual(result.added, ["configuration.yaml", "esphome/demo.yaml"])
+            self.assertEqual(result.deleted, [])
+            self.assertEqual(
+                _rel_files(repo), {"configuration.yaml", "esphome/demo.yaml"}
+            )
+            self.assertFalse((repo / "esphome" / ".git").exists())
+
+    def test_repository_git_metadata_protected_with_broad_include(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            repo = base / "repo"
+            _write(source / "configuration.yaml", "root")
+            _write(source / ".git" / "config", "source metadata")
+            _write(source / ".git" / "objects" / "ab" / "cdef", "source object")
+            marker = _write(repo / ".git" / "config", "repository metadata")
+            head = _write(repo / ".git" / "HEAD", "ref: refs/heads/main")
+            (repo / ".git" / "refs" / "tags").mkdir(parents=True)
+
+            sync = self._sync(source, repo, ["**"])
+            first = sync.sync()
+            second = sync.sync()
+
+            # Only the real configuration file is synchronized.
+            self.assertEqual(first.copied, ["configuration.yaml"])
+            self.assertEqual(first.deleted, [])
+            self.assertEqual(second.copied, [])
+            self.assertEqual(second.deleted, [])
+            self.assertEqual(_read(repo / "configuration.yaml"), "root")
+
+            # The repository's own Git metadata is neither replaced nor deleted.
+            self.assertEqual(_read(marker), "repository metadata")
+            self.assertEqual(_read(head), "ref: refs/heads/main")
+            self.assertFalse((repo / ".git" / "objects" / "ab" / "cdef").exists())
+            self.assertTrue((repo / ".git" / "refs" / "tags").is_dir())
 
 
 if __name__ == "__main__":

@@ -451,6 +451,52 @@ class SnapshotPruningTests(unittest.TestCase):
             self.assertNotIn("deps", scanned_names)
             self.assertNotIn("tts", scanned_names)
 
+    def test_git_directory_not_traversed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            _write(source / "esphome" / "demo.yaml", "x")
+            _write(source / "esphome" / ".git" / "index", "x")
+            _write(source / "esphome" / ".git" / "objects" / "ab" / "cdef", "x")
+            recorder = Recorder()
+            path_filter = PathFilter(include_patterns=["esphome/**"], exclude_patterns=[])
+            watcher = Watcher(source, path_filter, recorder, 0.1, poll_interval=0.01)
+
+            real_scandir = os.scandir
+            scanned: list[str] = []
+
+            def counting_scandir(path):
+                scanned.append(str(path))
+                return real_scandir(path)
+
+            with mock.patch.object(os, "scandir", side_effect=counting_scandir):
+                snapshot = watcher._snapshot()
+
+            self.assertIn("esphome/demo.yaml", snapshot)
+            self.assertNotIn("esphome/.git/index", snapshot)
+            self.assertNotIn("esphome/.git/objects/ab/cdef", snapshot)
+            self.assertIn("esphome", [Path(p).name for p in scanned])
+            self.assertNotIn(".git", [Path(p).name for p in scanned])
+
+    def test_git_changes_do_not_trigger_callback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            _write(source / "esphome" / "demo.yaml", "x")
+            _write(source / "esphome" / ".git" / "index", "x")
+            recorder = Recorder()
+            path_filter = PathFilter(include_patterns=["esphome/**"], exclude_patterns=[])
+            watcher = Watcher(source, path_filter, recorder, 0.1, poll_interval=0.01)
+            watcher.start()
+
+            # Changes below the reserved .git directory are not relevant.
+            _write(source / "esphome" / ".git" / "index", "y")
+            _write(source / "esphome" / ".git" / "objects" / "ab" / "cdef", "y")
+            self.assertEqual(recorder.wait_until(1, timeout=0.4), 0)
+
+            # A normal included file must still be detected.
+            _write(source / "esphome" / "demo.yaml", "y")
+            self.assertEqual(recorder.wait_until(1, timeout=2.0), 1)
+            watcher.stop()
+
 
 if __name__ == "__main__":
     unittest.main()
