@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 0.3.4-alpha.1
+
+#### Fixed
+
+- Home Assistant zeigt den Changelog der App wieder an: `CHANGELOG.md` liegt
+  jetzt direkt neben `config.yaml` im App-Verzeichnis
+  (`ha_config2git/CHANGELOG.md`). Der Supervisor sucht den Changelog
+  ausschließlich dort; zuvor lag die Datei im Repository-Root und wurde deshalb
+  nicht gefunden (`No changelog found for app ...` im Update-Dialog).
+
 ## [0.3.3]
 
 ### Fixed

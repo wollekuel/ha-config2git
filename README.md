@@ -484,6 +484,7 @@ pushed=False` oder einen Fehler, wirf einen Blick in
 repository.yaml            # Manifest des Home-Assistant-App-Repositories
 ha_config2git/
   config.yaml              # App-Metadaten und Konfigurationsschema
+  CHANGELOG.md             # Changelog (muss neben config.yaml liegen, HA-Anforderung)
   Dockerfile               # Container-Build-Definition
   run.sh                   # Container-Entrypoint
   rootfs/app/
@@ -498,7 +499,6 @@ ha_config2git/
 tests/                     # Unit- und Integrationstests
 LICENSE
 README.md
-CHANGELOG.md
 ```
 
 ## Entwicklung / Tests
@@ -540,10 +540,18 @@ in der Form `MAJOR.MINOR.PATCH`.
   Home-Assistant-Testinstallation).
 
 Jede veröffentlichte Version erhält einen Git-Tag im Format `vX.Y.Z`
-(z. B. `v0.2.0`) und wird im `CHANGELOG.md` dokumentiert. Jeder Release ist
-damit eindeutig einem Git-Commit und einem Git-Tag zugeordnet. Die App-Version
-wird zentral in `ha_config2git/config.yaml` gepflegt; die detaillierten
-Änderungen je Version stehen im [CHANGELOG](CHANGELOG.md).
+(z. B. `v0.2.0`) und wird im Changelog (`ha_config2git/CHANGELOG.md`)
+dokumentiert. Jeder Release ist damit eindeutig einem Git-Commit und einem
+Git-Tag zugeordnet. Die App-Version wird zentral in
+`ha_config2git/config.yaml` gepflegt; die detaillierten Änderungen je Version
+stehen im [CHANGELOG](ha_config2git/CHANGELOG.md).
+
+Der Changelog liegt bewusst **im App-Verzeichnis** unter
+`ha_config2git/CHANGELOG.md` und damit direkt neben `config.yaml`: Der
+Home-Assistant-Supervisor sucht den Changelog ausschließlich dort (neben der
+`config.yaml` der App) und zeigt ihn im Update-Dialog der App an. Die Datei darf
+deshalb **nicht** in das Repository-Root verschoben werden. Der
+Regressionstest in `tests/test_packaging.py` sichert diese Ablage ab.
 
 ## Bekannte Einschränkungen / Roadmap
 
