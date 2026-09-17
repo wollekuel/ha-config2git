@@ -5,11 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.3]
 
-### 0.3.3-alpha.1
-
-#### Fixed
+### Fixed
 
 - Git metadata (`.git` directories and `.git` files) is now excluded
   recursively and unconditionally. The rule is enforced inside `PathFilter`, so
@@ -24,20 +22,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The watcher no longer traverses `.git` directories, which also avoids
   unnecessary polling work.
 
-#### Security
+### Security
 
 - Git metadata is never copied into the backup anymore. This prevents contents
   such as `.git/config` (which may contain remote URLs or credentials),
   `.git/logs/HEAD` (author identities) or `.git/objects` (which may still
   contain deleted files) from being pushed to GitHub.
 
-#### Changed
+### Changed
 
 - The visible default `exclude_patterns` now lists `**/.git/**` for
   transparency. The protection itself remains a reserved internal rule, so it
   also applies to already saved options and to user-defined pattern lists.
 
-#### Known limitations
+### Known limitations
 
 - `.git` metadata that was already synchronized by an earlier version is **not**
   repaired automatically. The reserved exclusion prevents further
